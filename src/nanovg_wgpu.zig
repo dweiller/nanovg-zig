@@ -997,6 +997,7 @@ fn renderDeleteTexture(uptr: *anyopaque, image: i32) void {
     tex.bind_group[0].release();
     tex.bind_group[1].release();
     tex.tex.destroy();
+    tex.tex.release();
 }
 
 fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: i32, y: i32, w_arg: i32, h: i32, data_arg: ?[*]const u8) i32 {
