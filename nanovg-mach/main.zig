@@ -13,8 +13,8 @@ demo: Demo,
 fps: PerfGraph,
 blowup: bool,
 timer: std.time.Timer,
-clear_pipeline: gpu.RenderPipeline,
-quad_vertex_buffer: gpu.Buffer,
+clear_pipeline: *gpu.RenderPipeline,
+quad_vertex_buffer: *gpu.Buffer,
 
 pub fn init(app: *App, core: *mach.Core) !void {
     try core.setOptions(.{
@@ -37,7 +37,7 @@ pub fn init(app: *App, core: *mach.Core) !void {
 
     const shader_module = core.device.createShaderModule(&.{
         .label = "shader module",
-        .code = .{ .wgsl = @embedFile("full_screen.wgsl") },
+        .next_in_chain = .{ .wgsl_descriptor = &.{ .source = @embedFile("full_screen.wgsl") } },
     });
     defer shader_module.release();
 
@@ -46,13 +46,14 @@ pub fn init(app: *App, core: *mach.Core) !void {
         .usage = .{ .vertex = true, .copy_dst = true },
         .size = quad_vert_data.len * @sizeOf(f32),
     });
-    core.device.getQueue().writeBuffer(app.quad_vertex_buffer, 0, f32, &quad_vert_data);
+    core.device.getQueue().writeBuffer(app.quad_vertex_buffer, 0, &quad_vert_data);
 
     app.clear_pipeline = core.device.createRenderPipeline(&gpu.RenderPipeline.Descriptor{
+        .label = "clear pipeline",
         .vertex = .{
             .module = shader_module,
             .entry_point = "vert",
-            .buffers = &[_]gpu.VertexBufferLayout{
+            .buffers = &[1]gpu.VertexBufferLayout{
                 .{
                     // vertex buffer
                     .array_stride = 2 * 4,
@@ -61,15 +62,17 @@ pub fn init(app: *App, core: *mach.Core) !void {
                     .attributes = &vertex_buffer_attributes,
                 },
             },
+            .buffer_count = 1,
         },
         .fragment = &gpu.FragmentState{
             .module = shader_module,
             .entry_point = "frag",
-            .targets = &[_]gpu.ColorTargetState{
+            .targets = &[1]gpu.ColorTargetState{
                 .{
                     .format = core.swap_chain_format,
                 },
             },
+            .target_count = 1,
         },
     });
 }
@@ -106,10 +109,12 @@ pub fn update(app: *App, core: *mach.Core) !void {
         .load_op = .clear,
         .store_op = .store,
     };
-    const render_pass_descriptor = gpu.RenderPassEncoder.Descriptor{
-        .color_attachments = &[_]gpu.RenderPassColorAttachment{
+    const render_pass_descriptor = gpu.RenderPassDescriptor{
+        .label = "main render pass descriptor",
+        .color_attachments = &[1]gpu.RenderPassColorAttachment{
             color_attachment,
         },
+        .color_attachment_count = 1,
     };
 
     while (core.pollEvent()) |event| switch (event) {

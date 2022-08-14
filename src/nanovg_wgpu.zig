@@ -11,10 +11,14 @@ pub const Options = struct {
     // debug: bool = false,
 };
 
+const clear_value = gpu.Color{ .r = 1, .g = 0, .b = 1, .a = 1 };
+
+const log = std.log.scoped(.NanoVGWebGPU);
+
 pub fn init(
     allocator: Allocator,
-    device: gpu.Device,
-    swap_chain: *const ?gpu.SwapChain,
+    device: *gpu.Device,
+    swap_chain: *?*gpu.SwapChain,
     swap_chain_format: gpu.Texture.Format,
     options: Options,
 ) !nvg {
@@ -48,11 +52,11 @@ pub fn init(
 
 const WebGPUContext = struct {
     allocator: Allocator,
-    device: gpu.Device,
-    swap_chain: *const ?gpu.SwapChain,
+    device: *gpu.Device,
+    swap_chain: *?*gpu.SwapChain,
     swap_chain_format: gpu.Texture.Format,
-    depth_stencil: ?gpu.Texture = null,
-    depth_stencil_view: ?gpu.TextureView = null,
+    depth_stencil: ?*gpu.Texture = null,
+    depth_stencil_view: ?*gpu.TextureView = null,
     options: Options,
     pass: Pass,
     view: [2]f32,
@@ -65,8 +69,8 @@ const WebGPUContext = struct {
 
     fn init(
         allocator: Allocator,
-        device: gpu.Device,
-        swap_chain: *const ?gpu.SwapChain,
+        device: *gpu.Device,
+        swap_chain: *?*gpu.SwapChain,
         swap_chain_format: gpu.Texture.Format,
         options: Options,
     ) !*WebGPUContext {
@@ -128,12 +132,12 @@ const WebGPUContext = struct {
         return null;
     }
 
-    fn setUniforms(ctx: WebGPUContext, command_encoder: gpu.CommandEncoder, uniform_offset: u32) void {
-        const frag = ctx.uniforms.items[uniform_offset];
-        command_encoder.writeBuffer(ctx.pass.uniforms, 0, FragUniforms, &.{frag});
+    fn setUniforms(ctx: WebGPUContext, command_encoder: *gpu.CommandEncoder, uniform_offset: u32) void {
+        const frag = ctx.uniforms.items[uniform_offset .. uniform_offset + 1];
+        command_encoder.writeBuffer(ctx.pass.uniforms, 0, frag);
     }
 
-    fn setTextures(ctx: WebGPUContext, pass_encoder: gpu.RenderPassEncoder, call: Call) void {
+    fn setTextures(ctx: WebGPUContext, pass_encoder: *gpu.RenderPassEncoder, call: Call) void {
         if (ctx.getTexture(call.image)) |tex| {
             pass_encoder.setBindGroup(1, tex.bind_group[0], null);
         } else {
@@ -148,9 +152,9 @@ const WebGPUContext = struct {
 
     fn startEncoding(
         ctx: WebGPUContext,
-        command_encoder: gpu.CommandEncoder,
-        desc: gpu.RenderPassEncoder.Descriptor,
-    ) gpu.RenderPassEncoder {
+        command_encoder: *gpu.CommandEncoder,
+        desc: gpu.RenderPassDescriptor,
+    ) *gpu.RenderPassEncoder {
         const pass_encoder = command_encoder.beginRenderPass(&desc);
         pass_encoder.setVertexBuffer(0, ctx.pass.vert_buf, 0, ctx.pass.vert_size);
         pass_encoder.setBindGroup(0, ctx.pass.bind_group, null);
@@ -280,37 +284,37 @@ const FragUniforms = struct {
 
 const Pass = struct {
     stroke: struct {
-        stencil_base: gpu.RenderPipeline,
-        stencil_aa: gpu.RenderPipeline,
-        stencil_clear: gpu.RenderPipeline,
-        basic: gpu.RenderPipeline,
+        stencil_base: *gpu.RenderPipeline,
+        stencil_aa: *gpu.RenderPipeline,
+        stencil_clear: *gpu.RenderPipeline,
+        basic: *gpu.RenderPipeline,
     },
     fill: struct {
-        stencil: gpu.RenderPipeline,
-        antialias: gpu.RenderPipeline,
-        fill: gpu.RenderPipeline,
+        stencil: *gpu.RenderPipeline,
+        antialias: *gpu.RenderPipeline,
+        fill: *gpu.RenderPipeline,
     },
     convex: struct {
-        fill: gpu.RenderPipeline,
-        fringe: gpu.RenderPipeline,
+        fill: *gpu.RenderPipeline,
+        fringe: *gpu.RenderPipeline,
     },
     tri: struct {
-        pipeline: gpu.RenderPipeline,
+        pipeline: *gpu.RenderPipeline,
     },
-    sampler: gpu.Sampler,
-    vert_buf: gpu.Buffer,
+    sampler: *gpu.Sampler,
+    vert_buf: *gpu.Buffer,
     vert_size: usize,
-    uniforms: gpu.Buffer,
-    bind_group: gpu.BindGroup,
-    view_buf: gpu.Buffer,
-    texture_layout: gpu.BindGroupLayout,
-    fallback_texture: gpu.Texture,
-    fallback_texture_bind_group: gpu.BindGroup,
+    uniforms: *gpu.Buffer,
+    bind_group: *gpu.BindGroup,
+    view_buf: *gpu.Buffer,
+    texture_layout: *gpu.BindGroupLayout,
+    fallback_texture: *gpu.Texture,
+    fallback_texture_bind_group: *gpu.BindGroup,
 
-    fn init(pass: *Pass, device: gpu.Device, swap_chain_format: gpu.Texture.Format, edge_antialias: bool) !void {
+    fn init(pass: *Pass, device: *gpu.Device, swap_chain_format: gpu.Texture.Format, edge_antialias: bool) !void {
         const shader_module = device.createShaderModule(&gpu.ShaderModule.Descriptor{
             .label = "nanovg shader module",
-            .code = .{ .wgsl = @embedFile("nanovg.wgsl") },
+            .next_in_chain = .{ .wgsl_descriptor = &.{ .source = @embedFile("nanovg.wgsl") } },
         });
 
         const blend = gpu.BlendState{
@@ -338,38 +342,40 @@ const Pass = struct {
 
         const texture_layout = device.createBindGroupLayout(&gpu.BindGroupLayout.Descriptor{
             .label = "nanovg texture bind group layout",
-            .entries = &.{gpu.BindGroupLayout.Entry.texture(0, .{ .fragment = true }, .float, .dimension_2d, false)},
+            .entries = &[1]gpu.BindGroupLayout.Entry{
+                gpu.BindGroupLayout.Entry.texture(0, .{ .fragment = true }, .float, .dimension_2d, false),
+            },
+            .entry_count = 1,
         });
         pass.texture_layout = texture_layout;
 
         pass.fallback_texture_bind_group = device.createBindGroup(&gpu.BindGroup.Descriptor{
-            .label = "nanovg fallback testure bind group",
+            .label = "nanovg fallback texture bind group",
             .layout = texture_layout,
-            .entries = &[_]gpu.BindGroup.Entry{
+            .entries = &[1]gpu.BindGroup.Entry{
                 gpu.BindGroup.Entry.textureView(0, pass.fallback_texture.createView(&gpu.TextureView.Descriptor{
                     .label = "nanovg fallback texture view",
                     .dimension = .dimension_2d,
                 })),
             },
+            .entry_count = 1,
         });
 
-        const bind_group_layout = device.createBindGroupLayout(&gpu.BindGroupLayout.Descriptor{
-            .label = "nanovg bind group 0 layout",
-            .entries = &.{
-                gpu.BindGroupLayout.Entry.buffer(0, .{ .vertex = true }, .uniform, false, 0),
-                gpu.BindGroupLayout.Entry.buffer(1, .{ .fragment = true }, .uniform, false, 0),
-                gpu.BindGroupLayout.Entry.sampler(2, .{ .fragment = true }, .filtering),
-            },
-        });
+        const bind_group_layout = device.createBindGroupLayout(&gpu.BindGroupLayout.Descriptor{ .label = "nanovg bind group 0 layout", .entries = &[3]gpu.BindGroupLayout.Entry{
+            gpu.BindGroupLayout.Entry.buffer(0, .{ .vertex = true }, .uniform, false, 0),
+            gpu.BindGroupLayout.Entry.buffer(1, .{ .fragment = true }, .uniform, false, 0),
+            gpu.BindGroupLayout.Entry.sampler(2, .{ .fragment = true }, .filtering),
+        }, .entry_count = 3 });
         defer bind_group_layout.release();
 
         const pipeline_layout = device.createPipelineLayout(&gpu.PipelineLayout.Descriptor{
             .label = "nanovg pipeline layout",
-            .bind_group_layouts = &.{
+            .bind_group_layouts = &[3]*gpu.BindGroupLayout{
                 bind_group_layout,
                 texture_layout,
                 texture_layout,
             },
+            .bind_group_layout_count = 3,
         });
         defer pipeline_layout.release();
 
@@ -383,6 +389,7 @@ const Pass = struct {
             .module = shader_module,
             .entry_point = "vert",
             .buffers = &[_]gpu.VertexBufferLayout{buffer_layout},
+            .buffer_count = 1,
         };
 
         const color_target_write_all = gpu.ColorTargetState{
@@ -399,13 +406,15 @@ const Pass = struct {
         const fragment_state = gpu.FragmentState{
             .module = shader_module,
             .entry_point = if (edge_antialias) "fragEdgeAA" else "fragNoEdgeAA",
-            .targets = &[_]gpu.ColorTargetState{color_target_write_all},
+            .targets = &[1]gpu.ColorTargetState{color_target_write_all},
+            .target_count = 1,
         };
 
         const fragment_state_no_write = gpu.FragmentState{
             .module = shader_module,
             .entry_point = if (edge_antialias) "fragEdgeAA" else "fragNoEdgeAA",
-            .targets = &[_]gpu.ColorTargetState{color_target_write_none},
+            .targets = &[1]gpu.ColorTargetState{color_target_write_none},
+            .target_count = 1,
         };
 
         const depth_stencil_incr_clamp = gpu.DepthStencilState{
@@ -594,11 +603,12 @@ const Pass = struct {
         const bind_group = device.createBindGroup(&gpu.BindGroup.Descriptor{
             .label = "nanovg bind group 0",
             .layout = bind_group_layout,
-            .entries = &[_]gpu.BindGroup.Entry{
+            .entries = &[3]gpu.BindGroup.Entry{
                 gpu.BindGroup.Entry.buffer(0, view_buffer, 0, @sizeOf([2]f32)),
                 gpu.BindGroup.Entry.buffer(1, uniform_buffer, 0, @sizeOf(FragUniforms)),
                 gpu.BindGroup.Entry.sampler(2, sampler),
             },
+            .entry_count = 3,
         });
         pass.bind_group = bind_group;
     }
@@ -626,10 +636,10 @@ const Pass = struct {
 
 const Texture = struct {
     id: i32,
-    tex: gpu.Texture,
+    tex: *gpu.Texture,
     tex_type: internal.TextureType,
     flags: nvg.ImageFlags,
-    bind_group: [2]gpu.BindGroup,
+    bind_group: [2]*gpu.BindGroup,
     size: gpu.Extent3D,
     data_layout: gpu.Texture.DataLayout,
 };
@@ -672,20 +682,22 @@ const Call = struct {
     fn fill(
         call: Call,
         ctx: *const WebGPUContext,
-        command_encoder: gpu.CommandEncoder,
-        back_buffer_view: gpu.TextureView,
+        command_encoder: *gpu.CommandEncoder,
+        back_buffer_view: *gpu.TextureView,
     ) void {
         const paths = ctx.paths.items[call.path_offset..][0..call.path_count];
         {
-            const desc = gpu.RenderPassEncoder.Descriptor{
+            const desc = gpu.RenderPassDescriptor{
                 .label = "fill render pass 1",
-                .color_attachments = &[_]gpu.RenderPassColorAttachment{
+                .color_attachments = &[1]gpu.RenderPassColorAttachment{
                     .{
                         .view = back_buffer_view,
                         .load_op = .load,
                         .store_op = .store,
+                        .clear_value = clear_value,
                     },
                 },
+                .color_attachment_count = 1,
                 .depth_stencil_attachment = &gpu.RenderPassDepthStencilAttachment{
                     .view = ctx.depth_stencil_view.?,
                     .stencil_load_op = .load,
@@ -706,15 +718,17 @@ const Call = struct {
         }
 
         ctx.setUniforms(command_encoder, call.uniform_offset + 1);
-        const desc = gpu.RenderPassEncoder.Descriptor{
+        const desc = gpu.RenderPassDescriptor{
             .label = "fill render pass 2",
-            .color_attachments = &[_]gpu.RenderPassColorAttachment{
+            .color_attachments = &[1]gpu.RenderPassColorAttachment{
                 .{
                     .view = back_buffer_view,
                     .load_op = .load,
                     .store_op = .store,
+                    .clear_value = clear_value,
                 },
             },
+            .color_attachment_count = 1,
             .depth_stencil_attachment = &gpu.RenderPassDepthStencilAttachment{
                 .view = ctx.depth_stencil_view.?,
                 .stencil_load_op = .load,
@@ -748,20 +762,22 @@ const Call = struct {
     fn convexFill(
         call: Call,
         ctx: *const WebGPUContext,
-        command_encoder: gpu.CommandEncoder,
-        back_buffer_view: gpu.TextureView,
+        command_encoder: *gpu.CommandEncoder,
+        back_buffer_view: *gpu.TextureView,
     ) void {
         ctx.setUniforms(command_encoder, call.uniform_offset);
 
-        const desc = gpu.RenderPassEncoder.Descriptor{
+        const desc = gpu.RenderPassDescriptor{
             .label = "convexfill render pass",
-            .color_attachments = &[_]gpu.RenderPassColorAttachment{
+            .color_attachments = &[1]gpu.RenderPassColorAttachment{
                 .{
                     .view = back_buffer_view,
                     .load_op = .load,
                     .store_op = .store,
+                    .clear_value = clear_value,
                 },
             },
+            .color_attachment_count = 1,
         };
         const pass_encoder = ctx.startEncoding(command_encoder, desc);
 
@@ -785,22 +801,24 @@ const Call = struct {
     fn stroke(
         call: Call,
         ctx: *const WebGPUContext,
-        command_encoder: gpu.CommandEncoder,
-        back_buffer_view: gpu.TextureView,
+        command_encoder: *gpu.CommandEncoder,
+        back_buffer_view: *gpu.TextureView,
     ) void {
         const paths = ctx.paths.items[call.path_offset..][0..call.path_count];
 
         if (ctx.options.stencil_strokes) {
             {
-                const desc = gpu.RenderPassEncoder.Descriptor{
+                const desc = gpu.RenderPassDescriptor{
                     .label = "stroke render pass 1",
-                    .color_attachments = &[_]gpu.RenderPassColorAttachment{
+                    .color_attachments = &[1]gpu.RenderPassColorAttachment{
                         .{
                             .view = back_buffer_view,
                             .load_op = .load,
                             .store_op = .store,
+                            .clear_value = clear_value,
                         },
                     },
+                    .color_attachment_count = 1,
                     .depth_stencil_attachment = &gpu.RenderPassDepthStencilAttachment{
                         .view = ctx.depth_stencil_view.?,
                         .stencil_load_op = .load,
@@ -820,15 +838,17 @@ const Call = struct {
                 pass_encoder.release();
             }
             {
-                const desc = gpu.RenderPassEncoder.Descriptor{
+                const desc = gpu.RenderPassDescriptor{
                     .label = "stroke render pass 2",
-                    .color_attachments = &[_]gpu.RenderPassColorAttachment{
+                    .color_attachments = &[1]gpu.RenderPassColorAttachment{
                         .{
                             .view = back_buffer_view,
                             .load_op = .load,
                             .store_op = .store,
+                            .clear_value = clear_value,
                         },
                     },
+                    .color_attachment_count = 1,
                     .depth_stencil_attachment = &gpu.RenderPassDepthStencilAttachment{
                         .view = ctx.depth_stencil_view.?,
                         .stencil_load_op = .load,
@@ -853,15 +873,17 @@ const Call = struct {
                 pass_encoder.release();
             }
         } else {
-            const desc = gpu.RenderPassEncoder.Descriptor{
+            const desc = gpu.RenderPassDescriptor{
                 .label = "stroke render pass",
-                .color_attachments = &[_]gpu.RenderPassColorAttachment{
+                .color_attachments = &[1]gpu.RenderPassColorAttachment{
                     .{
                         .view = back_buffer_view,
                         .load_op = .load,
                         .store_op = .store,
+                        .clear_value = clear_value,
                     },
                 },
+                .color_attachment_count = 1,
             };
             ctx.setUniforms(command_encoder, call.uniform_offset);
             const pass_encoder = ctx.startEncoding(command_encoder, desc);
@@ -881,18 +903,20 @@ const Call = struct {
     fn triangles(
         call: Call,
         ctx: *const WebGPUContext,
-        command_encoder: gpu.CommandEncoder,
-        back_buffer_view: gpu.TextureView,
+        command_encoder: *gpu.CommandEncoder,
+        back_buffer_view: *gpu.TextureView,
     ) void {
-        const desc = gpu.RenderPassEncoder.Descriptor{
+        const desc = gpu.RenderPassDescriptor{
             .label = "triangle render pass",
-            .color_attachments = &[_]gpu.RenderPassColorAttachment{
+            .color_attachments = &[1]gpu.RenderPassColorAttachment{
                 .{
                     .view = back_buffer_view,
                     .load_op = .load,
                     .store_op = .store,
+                    .clear_value = clear_value,
                 },
             },
+            .color_attachment_count = 1,
         };
         ctx.setUniforms(command_encoder, call.uniform_offset);
 
@@ -925,7 +949,7 @@ fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32,
     };
 
     const format: gpu.Texture.Format = switch (tex_type) {
-        .none => .none,
+        .none => .undef,
         .rgba => .rgba8_unorm,
         .alpha => .r8_unorm,
     };
@@ -942,26 +966,28 @@ fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32,
 
     // TODO: flags.generate_mipmaps
 
-    const bind_group: [2]gpu.BindGroup = .{
+    const bind_group: [2]*gpu.BindGroup = .{
         ctx.device.createBindGroup(&gpu.BindGroup.Descriptor{
             .label = "nanovg texture bind group 1",
             .layout = ctx.pass.texture_layout,
-            .entries = &[_]gpu.BindGroup.Entry{
+            .entries = &[1]gpu.BindGroup.Entry{
                 gpu.BindGroup.Entry.textureView(0, texture.createView(&gpu.TextureView.Descriptor{
                     .label = "nanovg texture view 0",
                     .dimension = .dimension_2d,
                 })),
             },
+            .entry_count = 1,
         }),
         ctx.device.createBindGroup(&gpu.BindGroup.Descriptor{
             .label = "nanovg texture bind group 2",
             .layout = ctx.pass.texture_layout,
-            .entries = &[_]gpu.BindGroup.Entry{
+            .entries = &[1]gpu.BindGroup.Entry{
                 gpu.BindGroup.Entry.textureView(0, texture.createView(&gpu.TextureView.Descriptor{
                     .label = "nanovg texture view 1",
                     .dimension = .dimension_2d,
                 })),
             },
+            .entry_count = 1,
         }),
     };
 
@@ -977,7 +1003,6 @@ fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32,
             &gpu.ImageCopyTexture{ .texture = texture },
             &data_layout,
             &tex_size,
-            u8,
             data_raw[0 .. data_layout.bytes_per_row * data_layout.rows_per_image],
         );
     }
@@ -1020,7 +1045,6 @@ fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: i32, y: i32, w_arg: 
                 &gpu.ImageCopyTexture{ .texture = texture, .origin = .{ .x = x, .y = @intCast(u32, y) } },
                 &tex.data_layout,
                 &.{ .width = @intCast(u32, w), .height = @intCast(u32, h) },
-                u8,
                 data[0 .. color_size * w * @intCast(u32, h)],
             );
         },
@@ -1079,7 +1103,7 @@ fn renderFlush(uptr: *anyopaque) void {
     const ctx = WebGPUContext.castPtr(uptr);
     if (ctx.calls.items.len > 0) {
         const command_encoder = ctx.device.createCommandEncoder(null);
-        command_encoder.writeBuffer(ctx.pass.view_buf, 0, f32, &ctx.view);
+        command_encoder.writeBuffer(ctx.pass.view_buf, 0, &ctx.view);
 
         const required_size = ctx.verts.items.len * @sizeOf(internal.Vertex);
         if (required_size > ctx.pass.vert_size) {
@@ -1095,9 +1119,12 @@ fn renderFlush(uptr: *anyopaque) void {
             });
             ctx.pass.vert_size = required_size;
         }
-        command_encoder.writeBuffer(ctx.pass.vert_buf, 0, internal.Vertex, ctx.verts.items);
+        command_encoder.writeBuffer(ctx.pass.vert_buf, 0, ctx.verts.items);
 
-        const back_buffer_view = ctx.swap_chain.*.?.getCurrentTextureView();
+        const back_buffer_view = if (ctx.swap_chain.*) |swap_chain| swap_chain.getCurrentTextureView() else {
+            log.err("swap chain is null", .{});
+            return;
+        };
         defer back_buffer_view.release();
         for (ctx.calls.items) |call| {
             // TODO: equivalent of glBlendFuncSeparate()
