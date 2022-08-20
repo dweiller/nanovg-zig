@@ -1,5 +1,20 @@
 const std = @import("std");
 const mach = @import("mach/build.zig");
+const glfw = @import("mach/glfw/build.zig");
+const gpu_sdk = @import("mach/gpu/sdk.zig");
+const gpu_dawn_sdk = @import("mach/gpu-dawn/sdk.zig");
+const system_sdk = @import("mach/glfw/system_sdk.zig");
+
+const gpu_dawn = gpu_dawn_sdk.Sdk(.{
+    .glfw = glfw,
+    .glfw_include_dir = "mach/glfw/upstream/glfw/include",
+    .system_sdk = system_sdk,
+});
+
+const gpu = gpu_sdk.Sdk(.{
+    .glfw = glfw,
+    .gpu_dawn = gpu_dawn,
+});
 
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -13,7 +28,7 @@ pub fn build(b: *std.build.Builder) void {
             .name = "nanovg",
             .source = .{ .path = "../src/nanovg.zig" },
             .dependencies = &.{
-                @import("mach/gpu/build.zig").pkg,
+                gpu.pkg,
             },
         };
     };
