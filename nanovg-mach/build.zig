@@ -1,9 +1,9 @@
 const std = @import("std");
 const mach = @import("mach/build.zig");
-const glfw = @import("mach/glfw/build.zig");
-const gpu_sdk = @import("mach/gpu/sdk.zig");
-const gpu_dawn_sdk = @import("mach/gpu-dawn/sdk.zig");
-const system_sdk = @import("mach/glfw/system_sdk.zig");
+const glfw = @import("mach/libs/glfw/build.zig");
+const gpu_sdk = @import("mach/libs/gpu/sdk.zig");
+const gpu_dawn_sdk = @import("mach/libs/gpu-dawn/sdk.zig");
+const system_sdk = @import("mach/libs/glfw/system_sdk.zig");
 
 const gpu_dawn = gpu_dawn_sdk.Sdk(.{
     .glfw = glfw,
