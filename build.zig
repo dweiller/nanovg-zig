@@ -4,25 +4,28 @@ fn getRootDir() []const u8 {
     return std.fs.path.dirname(@src().file) orelse ".";
 }
 
+const root_dir = getRootDir();
+
 pub fn addNanoVGPackage(artifact: *std.build.LibExeObjStep) void {
-    artifact.addPackagePath("nanovg", getRootDir() ++ "/src/nanovg.zig");
-    artifact.addIncludePath(getRootDir() ++ "/src");
-    artifact.addCSourceFile(getRootDir() ++ "/src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });
-    artifact.addCSourceFile(getRootDir() ++ "/src/stb_image.c", &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" });
+    artifact.addPackagePath("nanovg", root_dir ++ "/src/nanovg.zig");
+    artifact.addIncludePath(root_dir ++ "/src");
+    artifact.addCSourceFile(root_dir ++ "/src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });
+    artifact.addCSourceFile(root_dir ++ "/src/stb_image.c", &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" });
     artifact.linkLibC();
 }
 
 pub fn build(b: *std.build.Builder) !void {
     var artifact: *std.build.LibExeObjStep = undefined;
     const target = b.standardTargetOptions(.{});
-    if (target.cpu_arch != null and target.cpu_arch.? == .wasm32) {
+    if (target.cpu_arch != null and (target.cpu_arch.? == .wasm32 or target.cpu_arch.? == .wasm64)) {
         artifact = b.addSharedLibrary("main", "examples/example_wasm.zig", .unversioned);
+        artifact.use_stage1 = true;
     } else {
         artifact = b.addExecutable("main", "examples/example_glfw.zig");
     }
     artifact.setTarget(target);
     artifact.setBuildMode(b.standardReleaseOptions());
-    if (target.cpu_arch == null or target.cpu_arch.? != .wasm32) {
+    if (target.cpu_arch == null or (target.cpu_arch.? != .wasm32 and target.cpu_arch.? != .wasm64)) {
         artifact.addIncludePath("lib/gl2/include");
         artifact.addCSourceFile("lib/gl2/src/glad.c", &.{});
         if (target.isWindows()) {
