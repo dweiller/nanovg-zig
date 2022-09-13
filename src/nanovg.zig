@@ -3,6 +3,7 @@ const std = @import("std");
 const internal = @import("internal.zig");
 
 pub const gl = @import("nanovg_gl.zig");
+pub const wgpu = @import("nanovg_wgpu.zig");
 
 const Self = @This();
 
