@@ -134,7 +134,6 @@ pub fn draw(demo: Demo, vg: nvg, mx: f32, my: f32, width: f32, height: f32, t: f
     drawButton(vg, ICON_TRASH, "Delete", x, y, 160, 28, nvg.rgba(128, 16, 8, 255));
     drawButton(vg, 0, "Cancel", x + 170, y, 110, 28, nvg.rgba(0, 0, 0, 0));
 
-    _ = demo;
     // Thumbnails box
     drawThumbnails(vg, 365, popy - 30, 160, 300, demo.images[0..], t);
 
@@ -1049,9 +1048,9 @@ fn unpremultiplyAlpha(image: []u8, w: usize, h: usize, stride: usize) void {
             const b = @as(u32, row[2]);
             const a = @as(u32, row[3]);
             if (a != 0) {
-                row[0] = @truncate(u8, @minimum(r * 255 / a, 255));
-                row[1] = @truncate(u8, @minimum(g * 255 / a, 255));
-                row[2] = @truncate(u8, @minimum(b * 255 / a, 255));
+                row[0] = @truncate(u8, @min(r * 255 / a, 255));
+                row[1] = @truncate(u8, @min(g * 255 / a, 255));
+                row[2] = @truncate(u8, @min(b * 255 / a, 255));
             }
         }
     }

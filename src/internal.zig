@@ -303,41 +303,45 @@ pub const Context = struct {
     pub fn endFrame(ctx: *Context) void {
         ctx.params.renderFlush(ctx.params.user_ptr);
         if (ctx.font_image_idx != 0) {
-            const fontImage = ctx.font_images[ctx.font_image_idx];
-            // delete images that smaller than current one
-            if (fontImage == 0)
+            const font_image = ctx.font_images[ctx.font_image_idx];
+            // delete images that are smaller than current one
+            if (font_image == 0)
                 return;
             var iw: i32 = undefined;
             var ih: i32 = undefined;
-            ctx.imageSize(fontImage, &iw, &ih);
+            ctx.imageSize(font_image, &iw, &ih);
             var i: u32 = 0;
             var j: u32 = 0;
             while (i < ctx.font_image_idx) : (i += 1) {
                 if (ctx.font_images[i] != 0) {
                     var nw: i32 = undefined;
                     var nh: i32 = undefined;
-                    ctx.imageSize(ctx.font_images[i], &nw, &nh);
+                    const image = ctx.font_images[i];
+                    ctx.font_images[i] = 0;
+                    ctx.imageSize(image, &nw, &nh);
                     if (nw < iw or nh < ih) {
-                        ctx.deleteImage(ctx.font_images[i]);
+                        ctx.deleteImage(image);
                     } else {
-                        ctx.font_images[j] = ctx.font_images[i];
+                        ctx.font_images[j] = image;
                         j += 1;
                     }
                 }
             }
             // make current font image to first
+            ctx.font_images[ctx.font_image_idx] = 0;
             ctx.font_images[j] = ctx.font_images[0];
-            ctx.font_images[0] = fontImage;
+            ctx.font_images[0] = font_image;
             ctx.font_image_idx = 0;
         }
     }
 
-    pub fn appendCommands(ctx: *Context, vals: []f32) void {
+    pub fn appendCommands(ctx: *Context, vals_src: anytype) void {
+        var vals: [vals_src.len]f32 = vals_src; 
         const state = ctx.getState();
 
         ctx.commands.ensureUnusedCapacity(vals.len) catch return;
 
-        if (Command.fromValue(vals[0]) != .close and Command.fromValue(vals[0]) != .winding) {
+        if (vals_src.len >= 3) {
             ctx.commandx = vals[vals.len - 2];
             ctx.commandy = vals[vals.len - 1];
         }
@@ -365,7 +369,7 @@ pub const Context = struct {
             }
         }
 
-        ctx.commands.appendSliceAssumeCapacity(vals);
+        ctx.commands.appendSliceAssumeCapacity(&vals);
     }
 
     fn tesselateBezier(ctx: *Context, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32, x4: f32, y4: f32, level: u8, cornerType: PointFlags) void {
@@ -454,6 +458,7 @@ pub const Context = struct {
             var p0 = &pts[pts.len - 1];
             if (ptEquals(p0.x, p0.y, pts[0].x, pts[0].y, ctx.dist_tol)) {
                 path.count -= 1;
+                if (path.count == 0) continue;
                 pts.len -= 1;
                 path.closed = true;
             }
@@ -490,6 +495,7 @@ pub const Context = struct {
 
         // Calculate which joins needs extra vertices to append, and gather vertex count.
         for (cache.paths.items) |*path| {
+            if (path.count == 0) continue;
             const pts = cache.points.items[path.first..][0..path.count];
             var nleft: u32 = 0;
             path.nbevel = 0;
@@ -684,6 +690,7 @@ pub const Context = struct {
         var verts = try cache.allocTempVerts(cverts);
 
         for (cache.paths.items) |*path| {
+            if (path.count == 0) continue;
             const pts = cache.points.items[path.first..][0..path.count];
 
             path.fill = &.{};
@@ -760,22 +767,22 @@ pub const Context = struct {
     }
 
     pub fn moveTo(ctx: *Context, x: f32, y: f32) void {
-        ctx.appendCommands(&.{ Command.move_to.toValue(), x, y });
+        ctx.appendCommands(.{ Command.move_to.toValue(), x, y });
     }
 
     pub fn lineTo(ctx: *Context, x: f32, y: f32) void {
-        ctx.appendCommands(&.{ Command.line_to.toValue(), x, y });
+        ctx.appendCommands(.{ Command.line_to.toValue(), x, y });
     }
 
     pub fn bezierTo(ctx: *Context, c1x: f32, c1y: f32, c2x: f32, c2y: f32, x: f32, y: f32) void {
-        ctx.appendCommands(&.{ Command.bezier_to.toValue(), c1x, c1y, c2x, c2y, x, y });
+        ctx.appendCommands(.{ Command.bezier_to.toValue(), c1x, c1y, c2x, c2y, x, y });
     }
 
     pub fn quadTo(ctx: *Context, cx: f32, cy: f32, x: f32, y: f32) void {
         const x0 = ctx.commandx;
         const y0 = ctx.commandy;
         // zig fmt: off
-        ctx.appendCommands(&.{
+        ctx.appendCommands(.{
             Command.bezier_to.toValue(),
             x0 + 2.0/3.0*(cx - x0), y0 + 2.0/3.0*(cy - y0),
             x + 2.0/3.0*(cx - x), y + 2.0/3.0*(cy - y),
@@ -838,11 +845,11 @@ pub const Context = struct {
     }
 
     pub fn closePath(ctx: *Context) void {
-        ctx.appendCommands(&.{Command.close.toValue()});
+        ctx.appendCommands(.{Command.close.toValue()});
     }
 
     pub fn pathWinding(ctx: *Context, dir: nvg.Winding) void {
-        ctx.appendCommands(&.{ Command.winding.toValue(), @intToFloat(f32, @enumToInt(dir)) });
+        ctx.appendCommands(.{ Command.winding.toValue(), @intToFloat(f32, @enumToInt(dir)) });
     }
 
     pub fn arc(ctx: *Context, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, dir: nvg.Winding) void {
@@ -887,9 +894,9 @@ pub const Context = struct {
             const tany = dx * r * kappa;
 
             if (i == 0) {
-                ctx.appendCommands(&.{ move.toValue(), x, y });
+                ctx.appendCommands(.{ move.toValue(), x, y });
             } else {
-                ctx.appendCommands(&.{ Command.bezier_to.toValue(), px + ptanx, py + ptany, x - tanx, y - tany, x, y });
+                ctx.appendCommands(.{ Command.bezier_to.toValue(), px + ptanx, py + ptany, x - tanx, y - tany, x, y });
             }
             px = x;
             py = y;
@@ -899,7 +906,7 @@ pub const Context = struct {
     }
 
     pub fn rect(ctx: *Context, x: f32, y: f32, w: f32, h: f32) void {
-        ctx.appendCommands(&.{
+        ctx.appendCommands(.{
             Command.move_to.toValue(), x,     y,
             Command.line_to.toValue(), x,     y + h,
             Command.line_to.toValue(), x + w, y + h,
@@ -927,7 +934,7 @@ pub const Context = struct {
             const rxTL = std.math.min(radTopLeft, halfw) * sign(w);
             const ryTL = std.math.min(radTopLeft, halfh) * sign(h);
             // zig fmt: off
-            ctx.appendCommands(&.{
+            ctx.appendCommands(.{
                 Command.move_to.toValue(), x, y + ryTL,
                 Command.line_to.toValue(), x, y + h - ryBL,
                 Command.bezier_to.toValue(), x, y + h - ryBL*(1 - kappa90), x + rxBL*(1 - kappa90), y + h, x + rxBL, y + h,
@@ -945,7 +952,7 @@ pub const Context = struct {
 
     pub fn ellipse(ctx: *Context, cx: f32, cy: f32, rx: f32, ry: f32) void {
         // zig fmt: off
-        ctx.appendCommands(&.{
+        ctx.appendCommands(.{
             Command.move_to.toValue(), cx-rx, cy,
             Command.bezier_to.toValue(), cx-rx, cy+ry*kappa90, cx-rx*kappa90, cy+ry, cx, cy+ry,
             Command.bezier_to.toValue(), cx+rx*kappa90, cy+ry, cx+rx, cy+ry*kappa90, cx+rx, cy,
