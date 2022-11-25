@@ -1139,7 +1139,7 @@ fn renderFlush(uptr: *anyopaque) void {
 
         var command = command_encoder.finish(null);
         command_encoder.release();
-        ctx.device.getQueue().submit(&.{command});
+        ctx.device.getQueue().submit(&[1]*const gpu.CommandBuffer{command});
         command.release();
 
         ctx.verts.clearRetainingCapacity();
