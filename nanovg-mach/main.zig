@@ -8,47 +8,59 @@ const PerfGraph = @import("perf");
 
 pub const App = @This();
 
+core: mach.Core,
 vg: nvg,
 demo: Demo,
 fps: PerfGraph,
 blowup: bool,
-timer: std.time.Timer,
+cursor_position: mach.Core.Position,
+timer: mach.Timer,
+total_time: f32,
 clear_pipeline: *gpu.RenderPipeline,
 quad_vertex_buffer: *gpu.Buffer,
 
-pub fn init(app: *App, core: *mach.Core) !void {
-    try core.setOptions(.{
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
+pub fn init(app: *App) !void {
+    const allocator = gpa.allocator();
+    try app.core.init(allocator, .{
         .title = "nanovg-mach",
-        .width = 1000,
-        .height = 1000,
-        .vsync = .none,
+        .size = .{
+            .width = 1000,
+            .height = 1000,
+        },
     });
+    app.core.setVSync(.none);
+
+    var device = app.core.device();
+    const swap_chain_format = app.core.descriptor().format;
     app.vg = try nvg.wgpu.init(
-        core.allocator,
-        core.device,
-        &core.swap_chain,
-        core.swap_chain_format,
+        allocator,
+        device,
+        &app.core.internal.swap_chain,
+        swap_chain_format,
         .{ .antialias = true },
     );
     app.demo.load(app.vg);
     app.fps = PerfGraph.init(.fps, "Frame Time");
     app.blowup = false;
-    app.timer = try std.time.Timer.start();
+    app.timer = try mach.Timer.start();
+    app.total_time = 0;
 
-    const shader_module = core.device.createShaderModule(&.{
+    const shader_module = device.createShaderModule(&.{
         .label = "shader module",
         .next_in_chain = .{ .wgsl_descriptor = &.{ .source = @embedFile("full_screen.wgsl") } },
     });
     defer shader_module.release();
 
-    app.quad_vertex_buffer = core.device.createBuffer(&gpu.Buffer.Descriptor{
+    app.quad_vertex_buffer = device.createBuffer(&gpu.Buffer.Descriptor{
         .label = "quad vertex buffer",
         .usage = .{ .vertex = true, .copy_dst = true },
         .size = quad_vert_data.len * @sizeOf(f32),
     });
-    core.device.getQueue().writeBuffer(app.quad_vertex_buffer, 0, &quad_vert_data);
+    device.getQueue().writeBuffer(app.quad_vertex_buffer, 0, &quad_vert_data);
 
-    app.clear_pipeline = core.device.createRenderPipeline(&gpu.RenderPipeline.Descriptor{
+    app.clear_pipeline = device.createRenderPipeline(&gpu.RenderPipeline.Descriptor{
         .label = "clear pipeline",
         .vertex = .{
             .module = shader_module,
@@ -69,7 +81,7 @@ pub fn init(app: *App, core: *mach.Core) !void {
             .entry_point = "frag",
             .targets = &[1]gpu.ColorTargetState{
                 .{
-                    .format = core.swap_chain_format,
+                    .format = swap_chain_format,
                 },
             },
             .target_count = 1,
@@ -95,13 +107,27 @@ const quad_vert_data = [_]f32{
     -1, 1,
 };
 
-pub fn deinit(app: *App, _: *mach.Core) void {
+pub fn deinit(app: *App) void {
     app.demo.free(app.vg);
     app.vg.deinit();
+    app.core.deinit();
 }
 
-pub fn update(app: *App, core: *mach.Core) !void {
-    const back_buffer_view = core.swap_chain.?.getCurrentTextureView();
+pub fn update(app: *App) !bool {
+    var events = app.core.pollEvents();
+    while (events.next()) |event| switch (event) {
+        .key_press => |ev| switch (ev.key) {
+            .space => app.blowup = !app.blowup,
+            else => {},
+        },
+        .mouse_motion => |m_ev| app.cursor_position = m_ev.pos,
+        .close => return true,
+        else => {},
+    };
+
+    const back_buffer_view = app.core.swapChain().getCurrentTextureView();
+    defer back_buffer_view.release();
+
     const color_attachment = gpu.RenderPassColorAttachment{
         .view = back_buffer_view,
         .resolve_target = null,
@@ -117,15 +143,8 @@ pub fn update(app: *App, core: *mach.Core) !void {
         .color_attachment_count = 1,
     };
 
-    while (core.pollEvent()) |event| switch (event) {
-        .key_press => |ev| switch (ev.key) {
-            .space => app.blowup = !app.blowup,
-            else => {},
-        },
-        else => {},
-    };
-
-    const command_encoder = core.device.createCommandEncoder(null);
+    const device = app.core.device();
+    const command_encoder = device.createCommandEncoder(null);
     {
         const pass_encoder = command_encoder.beginRenderPass(&render_pass_descriptor);
         pass_encoder.setPipeline(app.clear_pipeline);
@@ -136,32 +155,32 @@ pub fn update(app: *App, core: *mach.Core) !void {
     }
     var command = command_encoder.finish(null);
     command_encoder.release();
-    core.device.getQueue().submit(&[1]*const gpu.CommandBuffer{command});
+    device.getQueue().submit(&[1]*const gpu.CommandBuffer{command});
     command.release();
 
-    app.fps.update(core.delta_time);
-    const ns = app.timer.read();
-    const t = @intToFloat(f32, ns) / std.time.ns_per_s;
+    const delta_time = app.timer.lap();
+    app.total_time += delta_time;
+    app.fps.update(delta_time);
 
-    const window_size = core.getWindowSize();
-    const fb_size = core.getFramebufferSize();
+    const window_size = app.core.size();
+    const fb_size = app.core.framebufferSize();
     const px_ratio = @intToFloat(f32, fb_size.width) / @intToFloat(f32, window_size.width);
     app.vg.beginFrame(@intToFloat(f32, window_size.width), @intToFloat(f32, window_size.height), px_ratio);
 
-    const m_pos = core.internal.last_cursor_position;
+    const m_pos = app.cursor_position;
     app.demo.draw(
         app.vg,
         @floatCast(f32, m_pos.x),
         @floatCast(f32, m_pos.y),
         @intToFloat(f32, window_size.width),
         @intToFloat(f32, window_size.height),
-        t,
+        app.total_time,
         app.blowup,
     );
     app.fps.draw(app.vg, 5, 5);
 
     app.vg.endFrame();
 
-    core.swap_chain.?.present();
-    back_buffer_view.release();
+    app.core.swapChain().present();
+    return false;
 }

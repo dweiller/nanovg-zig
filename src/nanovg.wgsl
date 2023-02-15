@@ -31,19 +31,19 @@ struct VertexOutput {
     @location(2) uv: vec2<f32>,
 }
 
-@stage(vertex)
+@vertex
 fn vert(@location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>) -> VertexOutput {
     let clip_pos = vec4<f32>(2.0 * pos.x / view.x - 1.0, 1.0 - 2.0 * pos.y / view.y, 0.0, 1.0);
     return VertexOutput(clip_pos, pos, uv);
 }
 
-@stage(fragment)
+@fragment
 fn fragEdgeAA(input: VertexOutput) -> @location(0) vec4<f32> {
     let strokeAlpha = strokeMask(input.uv);
     return frag_main(input, strokeAlpha);
 }
 
-@stage(fragment)
+@fragment
 fn fragNoEdgeAA(input: VertexOutput) -> @location(0) vec4<f32> {
     let strokeAlpha = 1.0;
     return frag_main(input, strokeAlpha);

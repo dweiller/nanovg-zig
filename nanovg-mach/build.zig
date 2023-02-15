@@ -23,43 +23,39 @@ pub fn build(b: *std.build.Builder) !void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
-    const packages = struct {
-        const nanovg = std.build.Pkg{
-            .name = "nanovg",
-            .source = .{ .path = "../src/nanovg.zig" },
-            .dependencies = &.{
-                gpu.pkg,
-            },
-        };
-    };
-
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
+
+    const nanovg = b.createModule(.{
+        .source_file = .{ .path = "../src/nanovg.zig" },
+        .dependencies = &.{
+            .{ .name = "gpu", .module = gpu.module(b) },
+        },
+    });
+    const nanovg_mod_dep = std.Build.ModuleDependency{ .name = "nanovg", .module = nanovg };
+
+    const demo = b.createModule(.{
+        .source_file = .{ .path = "../examples/demo.zig" },
+        .dependencies = &.{nanovg_mod_dep},
+    });
+
+    const perf = b.createModule(.{
+        .source_file = .{ .path = "../examples/perf.zig" },
+        .dependencies = &.{nanovg_mod_dep},
+    });
 
     const nanovg_demo = try mach.App.init(b, .{
         .name = "nanovg-demo",
         .src = "main.zig",
         .target = target,
+        .optimize = optimize,
         .deps = &.{
-            packages.nanovg,
-            std.build.Pkg{
-                .name = "demo",
-                .source = .{ .path = "../examples/demo.zig" },
-                .dependencies = &.{
-                    packages.nanovg,
-                },
-            },
-            std.build.Pkg{
-                .name = "perf",
-                .source = .{ .path = "../examples/perf.zig" },
-                .dependencies = &.{
-                    packages.nanovg,
-                },
-            },
+            nanovg_mod_dep,
+            .{ .name = "demo", .module = demo },
+            .{ .name = "perf", .module = perf },
         },
     });
-    nanovg_demo.setBuildMode(mode);
     try nanovg_demo.link(.{});
     nanovg_demo.step.addIncludePath("../src");
     nanovg_demo.step.addCSourceFile("../src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });
@@ -67,6 +63,9 @@ pub fn build(b: *std.build.Builder) !void {
     nanovg_demo.step.linkLibC();
     nanovg_demo.install();
 
+    const nanovg_demo_run = nanovg_demo.step.run();
+    nanovg_demo_run.condition = .always;
+
     const nanostep = b.step("run", "Run nanovg-demo");
-    nanostep.dependOn(try nanovg_demo.run());
+    nanostep.dependOn(&nanovg_demo_run.step);
 }

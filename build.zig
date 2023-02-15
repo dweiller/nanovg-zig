@@ -6,26 +6,38 @@ fn getRootDir() []const u8 {
 
 const root_dir = getRootDir();
 
-pub fn addNanoVGPackage(artifact: *std.build.LibExeObjStep) void {
-    artifact.addPackagePath("nanovg", root_dir ++ "/src/nanovg.zig");
+pub fn addNanoVGModule(b: *std.Build, artifact: *std.build.CompileStep) void {
+    const module = b.createModule(.{ .source_file = .{ .path = root_dir ++ "/src/nanovg.zig" } });
+    artifact.addModule("nanovg", module);
     artifact.addIncludePath(root_dir ++ "/src");
     artifact.addCSourceFile(root_dir ++ "/src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });
     artifact.addCSourceFile(root_dir ++ "/src/stb_image.c", &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" });
     artifact.linkLibC();
 }
 
-pub fn build(b: *std.build.Builder) !void {
-    var artifact: *std.build.LibExeObjStep = undefined;
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-    if (target.cpu_arch != null and (target.cpu_arch.? == .wasm32 or target.cpu_arch.? == .wasm64)) {
-        artifact = b.addSharedLibrary("main", "examples/example_wasm.zig", .unversioned);
-        artifact.use_stage1 = true;
-    } else {
-        artifact = b.addExecutable("main", "examples/example_glfw.zig");
-    }
-    artifact.setTarget(target);
-    artifact.setBuildMode(b.standardReleaseOptions());
-    if (target.cpu_arch == null or (target.cpu_arch.? != .wasm32 and target.cpu_arch.? != .wasm64)) {
+    const optimize = b.standardOptimizeOption(.{});
+
+    const target_wasm = if (target.cpu_arch) |arch| arch == .wasm32 or arch == .wasm64 else false;
+    const artifact = init: {
+        if (target_wasm) {
+            break :init b.addSharedLibrary(.{
+                .name = "main",
+                .root_source_file = .{ .path = "examples/example_wasm.zig" },
+                .target = target,
+                .optimize = optimize,
+            });
+        } else {
+            break :init b.addExecutable(.{
+                .name = "main",
+                .root_source_file = .{ .path = "examples/example_glfw.zig" },
+                .target = target,
+                .optimize = optimize,
+            });
+        }
+    };
+    if (!target_wasm) {
         artifact.addIncludePath("lib/gl2/include");
         artifact.addCSourceFile("lib/gl2/src/glad.c", &.{});
         if (target.isWindows()) {
@@ -48,6 +60,6 @@ pub fn build(b: *std.build.Builder) !void {
     }
     artifact.addIncludePath("examples");
     artifact.addCSourceFile("examples/stb_image_write.c", &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" });
-    addNanoVGPackage(artifact);
+    addNanoVGModule(b, artifact);
     artifact.install();
 }

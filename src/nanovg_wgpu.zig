@@ -18,7 +18,7 @@ const log = std.log.scoped(.NanoVGWebGPU);
 pub fn init(
     allocator: Allocator,
     device: *gpu.Device,
-    swap_chain: *?*gpu.SwapChain,
+    swap_chain: *const *gpu.SwapChain,
     swap_chain_format: gpu.Texture.Format,
     options: Options,
 ) !nvg {
@@ -53,7 +53,7 @@ pub fn init(
 const WebGPUContext = struct {
     allocator: Allocator,
     device: *gpu.Device,
-    swap_chain: *?*gpu.SwapChain,
+    swap_chain: *const *gpu.SwapChain,
     swap_chain_format: gpu.Texture.Format,
     depth_stencil: ?*gpu.Texture = null,
     depth_stencil_view: ?*gpu.TextureView = null,
@@ -70,7 +70,7 @@ const WebGPUContext = struct {
     fn init(
         allocator: Allocator,
         device: *gpu.Device,
-        swap_chain: *?*gpu.SwapChain,
+        swap_chain: *const *gpu.SwapChain,
         swap_chain_format: gpu.Texture.Format,
         options: Options,
     ) !*WebGPUContext {
@@ -949,7 +949,7 @@ fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32,
     };
 
     const format: gpu.Texture.Format = switch (tex_type) {
-        .none => .undef,
+        .none => .undefined,
         .rgba => .rgba8_unorm,
         .alpha => .r8_unorm,
     };
@@ -1121,10 +1121,7 @@ fn renderFlush(uptr: *anyopaque) void {
         }
         command_encoder.writeBuffer(ctx.pass.vert_buf, 0, ctx.verts.items);
 
-        const back_buffer_view = if (ctx.swap_chain.*) |swap_chain| swap_chain.getCurrentTextureView() else {
-            log.err("swap chain is null", .{});
-            return;
-        };
+        const back_buffer_view = ctx.swap_chain.*.getCurrentTextureView();
         defer back_buffer_view.release();
         for (ctx.calls.items) |call| {
             // TODO: equivalent of glBlendFuncSeparate()
