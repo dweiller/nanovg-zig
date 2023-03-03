@@ -1,20 +1,5 @@
 const std = @import("std");
 const mach = @import("mach/build.zig");
-const glfw = @import("mach/libs/glfw/build.zig");
-const gpu_sdk = @import("mach/libs/gpu/sdk.zig");
-const gpu_dawn_sdk = @import("mach/libs/gpu-dawn/sdk.zig");
-const system_sdk = @import("mach/libs/glfw/system_sdk.zig");
-
-const gpu_dawn = gpu_dawn_sdk.Sdk(.{
-    .glfw = glfw,
-    .glfw_include_dir = "mach/glfw/upstream/glfw/include",
-    .system_sdk = system_sdk,
-});
-
-const gpu = gpu_sdk.Sdk(.{
-    .glfw = glfw,
-    .gpu_dawn = gpu_dawn,
-});
 
 pub fn build(b: *std.build.Builder) !void {
     // Standard target options allows the person running `zig build` to choose
@@ -29,9 +14,7 @@ pub fn build(b: *std.build.Builder) !void {
 
     const nanovg = b.createModule(.{
         .source_file = .{ .path = "../src/nanovg.zig" },
-        .dependencies = &.{
-            .{ .name = "gpu", .module = gpu.module(b) },
-        },
+        .dependencies = &.{},
     });
     const nanovg_mod_dep = std.Build.ModuleDependency{ .name = "nanovg", .module = nanovg };
 
@@ -56,6 +39,7 @@ pub fn build(b: *std.build.Builder) !void {
             .{ .name = "perf", .module = perf },
         },
     });
+    try nanovg.dependencies.put("gpu", nanovg_demo.step.modules.get("gpu").?);
     try nanovg_demo.link(.{});
     nanovg_demo.step.addIncludePath("../src");
     nanovg_demo.step.addCSourceFile("../src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });

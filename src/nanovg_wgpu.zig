@@ -126,7 +126,7 @@ const WebGPUContext = struct {
     }
 
     fn removeTexture(ctx: *WebGPUContext, id: i32) ?Texture {
-        for (ctx.textures.items) |*texture, i| {
+        for (ctx.textures.items, 0..) |*texture, i| {
             if (texture.id == id) return ctx.textures.swapRemove(i);
         }
         return null;
@@ -1190,10 +1190,10 @@ fn renderFill(
             copy.fill_count = @intCast(u32, path.fill.len);
             // BUG: need to turn triangle fan into individual triangles as webgpu doesn't support triangle fan topology
             const v0 = path.fill[0];
-            for (path.fill[2..]) |vert, i| {
+            for (path.fill[1..path.fill.len - 1], path.fill[2..]) |vert1, vert2| {
                 ctx.verts.appendAssumeCapacity(v0);
-                ctx.verts.appendAssumeCapacity(path.fill[i + 1]);
-                ctx.verts.appendAssumeCapacity(vert);
+                ctx.verts.appendAssumeCapacity(vert1);
+                ctx.verts.appendAssumeCapacity(vert2);
                 // ctx.verts.appendSliceAssumeCapacity(path.fill);
             }
         }
