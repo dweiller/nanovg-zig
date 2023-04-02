@@ -12,9 +12,11 @@ pub fn build(b: *std.build.Builder) !void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const optimize = b.standardOptimizeOption(.{});
 
+    const gpu_module = mach.module(b).dependencies.get("core").?.dependencies.get("gpu").?;
+
     const nanovg = b.createModule(.{
         .source_file = .{ .path = "../src/nanovg.zig" },
-        .dependencies = &.{},
+        .dependencies = &.{ .{ .name = "gpu", .module = gpu_module } },
     });
     const nanovg_mod_dep = std.Build.ModuleDependency{ .name = "nanovg", .module = nanovg };
 
@@ -37,9 +39,10 @@ pub fn build(b: *std.build.Builder) !void {
             nanovg_mod_dep,
             .{ .name = "demo", .module = demo },
             .{ .name = "perf", .module = perf },
+            .{ .name = "gpu", .module =  gpu_module}
         },
     });
-    try nanovg.dependencies.put("gpu", nanovg_demo.step.modules.get("gpu").?);
+
     try nanovg_demo.link(.{});
     nanovg_demo.step.addIncludePath("../src");
     nanovg_demo.step.addCSourceFile("../src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });
@@ -48,7 +51,6 @@ pub fn build(b: *std.build.Builder) !void {
     nanovg_demo.install();
 
     const nanovg_demo_run = nanovg_demo.step.run();
-    nanovg_demo_run.condition = .always;
 
     const nanostep = b.step("run", "Run nanovg-demo");
     nanostep.dependOn(&nanovg_demo_run.step);
