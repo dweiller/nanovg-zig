@@ -50,7 +50,7 @@ pub fn build(b: *std.build.Builder) !void {
     nanovg_demo.step.linkLibC();
     nanovg_demo.install();
 
-    const nanovg_demo_run = nanovg_demo.step.run();
+    const nanovg_demo_run = nanovg_demo.addRunArtifact();
 
     const nanostep = b.step("run", "Run nanovg-demo");
     nanostep.dependOn(&nanovg_demo_run.step);
