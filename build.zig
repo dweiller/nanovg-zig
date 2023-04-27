@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) !void {
         }
     };
 
-    const module = b.createModule(.{ .source_file = .{ .path = root_dir ++ "/src/nanovg.zig" } });
+    const module = b.addModule("nanovg", .{ .source_file = .{ .path = root_dir ++ "/src/nanovg.zig" } });
     artifact.addModule("nanovg", module);
     addCSourceFiles(artifact);
 
@@ -56,12 +56,26 @@ pub fn build(b: *std.Build) !void {
         } else if (target.isDarwin()) {
             artifact.linkSystemLibrary("glfw3");
             artifact.linkFramework("OpenGL");
+        } else if (target.isLinux()) {
+            artifact.linkSystemLibrary("glfw3");
+            artifact.linkSystemLibrary("GL");
+            artifact.linkSystemLibrary("X11");
         } else {
+            std.log.warn("Unsupported target: {}", .{target});
             artifact.linkSystemLibrary("glfw3");
             artifact.linkSystemLibrary("GL");
         }
     }
     artifact.addIncludePath("examples");
     artifact.addCSourceFile("examples/stb_image_write.c", &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" });
-    artifact.install();
+    b.installArtifact(artifact);
+
+    const run_cmd = b.addRunArtifact(artifact);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
+
+    const run_step = b.step("run", "Run the app");
+    run_step.dependOn(&run_cmd.step);
 }
