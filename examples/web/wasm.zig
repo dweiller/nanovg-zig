@@ -55,26 +55,26 @@ export fn realloc(ptr: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque {
     const p = ptr orelse return malloc(size);
     defer free(p);
     if (size == 0) return null;
-    const actual_buffer = @ptrCast([*]u8, p) - malloc_alignment;
+    const actual_buffer = @as([*]u8, @ptrCast(p)) - malloc_alignment;
     const len = std.mem.readIntNative(usize, actual_buffer[0..@sizeOf(usize)]);
     const new = malloc(size);
     return memmove(new, actual_buffer + malloc_alignment, len);
 }
 
 export fn free(ptr: ?*anyopaque) callconv(.C) void {
-    const actual_buffer = @ptrCast([*]u8, ptr orelse return) - 16;
+    const actual_buffer = @as([*]u8, @ptrCast(ptr orelse return)) - 16;
     const len = std.mem.readIntNative(usize, actual_buffer[0..@sizeOf(usize)]);
     global_allocator.free(actual_buffer[0..len]);
 }
 
 export fn memmove(dest: ?*anyopaque, src: ?*anyopaque, n: usize) ?*anyopaque {
-    const csrc = @ptrCast([*]u8, src)[0..n];
-    const cdest = @ptrCast([*]u8, dest)[0..n];
+    const csrc = @as([*]u8, @ptrCast(src))[0..n];
+    const cdest = @as([*]u8, @ptrCast(dest))[0..n];
 
     // Create a temporary array to hold data of src
     var buf: [1 << 12]u8 = undefined;
-    const temp = if (n <= buf.len) buf[0..n] else @ptrCast([*]u8, malloc(n))[0..n];
-    defer if (n > buf.len) free(@ptrCast(*anyopaque, temp));
+    const temp = if (n <= buf.len) buf[0..n] else @as([*]u8, @ptrCast(malloc(n)))[0..n];
+    defer if (n > buf.len) free(@as(*anyopaque, @ptrCast(temp)));
 
     for (csrc, 0..) |c, i|
         temp[i] = c;
@@ -98,7 +98,7 @@ export fn memset(ptr: ?[*]u8, value: c_int, num: usize) ?[*]u8 {
     // FIXME: the optimizer replaces this with a memset call which leads to a stack overflow.
     // std.mem.set(u8, ptr.?[0..num], @intCast(u8, value));
     for (ptr.?[0..num]) |*d|
-        d.* = @intCast(u8, value);
+        d.* = @as(u8, @intCast(value));
     return ptr;
 }
 
@@ -148,7 +148,7 @@ export fn strtol(nptr: [*]const u8, endptr: *?[*]const u8, base: c_int) c_long {
             break;
         }
     }
-    endptr.* = @ptrCast([*]const u8, &nptr[i]);
+    endptr.* = @as([*]const u8, @ptrCast(&nptr[i]));
     return l;
 }
 
@@ -157,4 +157,26 @@ export fn __assert_fail(a: i32, b: i32, c: i32, d: i32) void {
     _ = b;
     _ = c;
     _ = d;
+}
+
+export fn abs(i: c_int) c_int {
+    return if (i < 0) -i else i;
+}
+
+export fn pow(x: f64, y: f64) f64 {
+    return std.math.pow(f64, x, y);
+}
+
+export fn ldexp(x: f64, n: c_int) f64 {
+    return std.math.ldexp(x, n);
+}
+
+export var __stack_chk_guard: c_ulong = undefined;
+
+export fn __stack_chk_guard_setup() void {
+    __stack_chk_guard = 0xBAAAAAAD;
+}
+
+export fn __stack_chk_fail() void {
+    @panic("stack fail");
 }

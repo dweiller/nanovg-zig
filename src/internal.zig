@@ -257,21 +257,21 @@ pub const Context = struct {
         var w: c_int = undefined;
         var h: c_int = undefined;
         var n: c_int = undefined;
-        const maybe_img = c.stbi_load_from_memory(data.ptr, @intCast(c_int, data.len), &w, &h, &n, 4);
+        const maybe_img = c.stbi_load_from_memory(data.ptr, @intCast(data.len), &w, &h, &n, 4);
         if (maybe_img) |img| {
             defer c.stbi_image_free(img);
-            const size = @intCast(usize, w * h * 4);
-            return ctx.createImageRGBA(@intCast(u32, w), @intCast(u32, h), flags, img[0..size]);
+            const size: usize = @intCast(w * h * 4);
+            return ctx.createImageRGBA(@intCast(w), @intCast(h), flags, img[0..size]);
         }
         return .{ .handle = 0 };
     }
 
     pub fn createImageRGBA(ctx: *Context, w: u32, h: u32, flags: ImageFlags, data: []const u8) Image {
-        return Image{ .handle = ctx.params.renderCreateTexture(ctx.params.user_ptr, .rgba, @intCast(i32, w), @intCast(i32, h), flags, data.ptr) catch 0 };
+        return Image{ .handle = ctx.params.renderCreateTexture(ctx.params.user_ptr, .rgba, @intCast(w), @intCast(h), flags, data.ptr) catch 0 };
     }
 
     pub fn createImageAlpha(ctx: *Context, w: u32, h: u32, flags: ImageFlags, data: []const u8) Image {
-        return Image{ .handle = ctx.params.renderCreateTexture(ctx.params.user_ptr, .alpha, @intCast(i32, w), @intCast(i32, h), flags, data.ptr) catch 0 };
+        return Image{ .handle = ctx.params.renderCreateTexture(ctx.params.user_ptr, .alpha, @intCast(w), @intCast(h), flags, data.ptr) catch 0 };
     }
 
     pub fn updateImage(ctx: *Context, image: Image, data: []const u8) void {
@@ -439,7 +439,7 @@ pub const Context = struct {
                     i += 1;
                 },
                 .winding => {
-                    cache.pathWinding(@intToEnum(nvg.Winding, @floatToInt(u2, ctx.commands.items[i + 1])));
+                    cache.pathWinding(@enumFromInt(@as(u2, @intFromFloat(ctx.commands.items[i + 1]))));
                     i += 2;
                 },
             }
@@ -480,10 +480,10 @@ pub const Context = struct {
                 p0.dy = p1.y - p0.y;
                 p0.len = normalize(&p0.dx, &p0.dy);
                 // Update bounds
-                cache.bounds[0] = std.math.min(cache.bounds[0], p0.x);
-                cache.bounds[1] = std.math.min(cache.bounds[1], p0.y);
-                cache.bounds[2] = std.math.max(cache.bounds[2], p0.x);
-                cache.bounds[3] = std.math.max(cache.bounds[3], p0.y);
+                cache.bounds[0] = @min(cache.bounds[0], p0.x);
+                cache.bounds[1] = @min(cache.bounds[1], p0.y);
+                cache.bounds[2] = @max(cache.bounds[2], p0.x);
+                cache.bounds[3] = @max(cache.bounds[3], p0.y);
             }
         }
     }
@@ -529,7 +529,7 @@ pub const Context = struct {
                 }
 
                 // Calculate if we should use bevel or miter for inner join.
-                const limit = std.math.max(1.01, std.math.min(p0.len, p1.len) * iw);
+                const limit = @max(1.01, @min(p0.len, p1.len) * iw);
                 if ((dmr2 * limit * limit) < 1.0)
                     p1.flags.innerbevel = true;
 
@@ -849,7 +849,7 @@ pub const Context = struct {
     }
 
     pub fn pathWinding(ctx: *Context, dir: nvg.Winding) void {
-        ctx.appendCommands(.{ Command.winding.toValue(), @intToFloat(f32, @enumToInt(dir)) });
+        ctx.appendCommands(.{ Command.winding.toValue(), @as(f32, @floatFromInt(@intFromEnum(dir))) });
     }
 
     pub fn arc(ctx: *Context, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, dir: nvg.Winding) void {
@@ -925,14 +925,14 @@ pub const Context = struct {
         } else {
             const halfw = @fabs(w) * 0.5;
             const halfh = @fabs(h) * 0.5;
-            const rxBL = std.math.min(radBottomLeft, halfw) * sign(w);
-            const ryBL = std.math.min(radBottomLeft, halfh) * sign(h);
-            const rxBR = std.math.min(radBottomRight, halfw) * sign(w);
-            const ryBR = std.math.min(radBottomRight, halfh) * sign(h);
-            const rxTR = std.math.min(radTopRight, halfw) * sign(w);
-            const ryTR = std.math.min(radTopRight, halfh) * sign(h);
-            const rxTL = std.math.min(radTopLeft, halfw) * sign(w);
-            const ryTL = std.math.min(radTopLeft, halfh) * sign(h);
+            const rxBL = @min(radBottomLeft, halfw) * sign(w);
+            const ryBL = @min(radBottomLeft, halfh) * sign(h);
+            const rxBR = @min(radBottomRight, halfw) * sign(w);
+            const ryBR = @min(radBottomRight, halfh) * sign(h);
+            const rxTR = @min(radTopRight, halfw) * sign(w);
+            const ryTR = @min(radTopRight, halfh) * sign(h);
+            const rxTL = @min(radTopLeft, halfw) * sign(w);
+            const ryTL = @min(radTopLeft, halfh) * sign(h);
             // zig fmt: off
             ctx.appendCommands(.{
                 Command.move_to.toValue(), x, y + ryTL,
@@ -1004,7 +1004,7 @@ pub const Context = struct {
 
         p.radius = 0;
 
-        p.feather = std.math.max(1, d);
+        p.feather = @max(1, d);
 
         p.inner_color = icol;
         p.outer_color = ocol;
@@ -1027,7 +1027,7 @@ pub const Context = struct {
 
         p.radius = r;
 
-        p.feather = std.math.max(1, f);
+        p.feather = @max(1, f);
 
         p.inner_color = icol;
         p.outer_color = ocol;
@@ -1048,7 +1048,7 @@ pub const Context = struct {
 
         p.radius = r;
 
-        p.feather = std.math.max(1, f);
+        p.feather = @max(1, f);
 
         p.inner_color = icol;
         p.outer_color = ocol;
@@ -1108,14 +1108,14 @@ pub const Context = struct {
     }
 
     fn isectRects(dst: *[4]f32, ax: f32, ay: f32, aw: f32, ah: f32, bx: f32, by: f32, bw: f32, bh: f32) void {
-        const minx = std.math.max(ax, bx);
-        const miny = std.math.max(ay, by);
-        const maxx = std.math.min(ax + aw, bx + bw);
-        const maxy = std.math.min(ay + ah, by + bh);
+        const minx = @max(ax, bx);
+        const miny = @max(ay, by);
+        const maxx = @min(ax + aw, bx + bw);
+        const maxy = @min(ay + ah, by + bh);
         dst[0] = minx;
         dst[1] = miny;
-        dst[2] = std.math.max(0, maxx - minx);
-        dst[3] = std.math.max(0, maxy - miny);
+        dst[2] = @max(0, maxx - minx);
+        dst[3] = @max(0, maxy - miny);
     }
 
     pub fn intersectScissor(ctx: *Context, x: f32, y: f32, w: f32, h: f32) void {
@@ -1147,7 +1147,7 @@ pub const Context = struct {
 
     pub fn resetScissor(ctx: *Context) void {
         const state = ctx.getState();
-        std.mem.set(f32, &state.scissor.xform, 0);
+        @memset(&state.scissor.xform, 0);
         state.scissor.extent[0] = -1;
         state.scissor.extent[1] = -1;
     }
@@ -1169,8 +1169,8 @@ pub const Context = struct {
 
         // Count triangles
         for (ctx.cache.paths.items) |path| {
-            if (path.fill.len >= 2) ctx.fill_tri_count += @intCast(u32, path.fill.len - 2);
-            if (path.stroke.len >= 2) ctx.fill_tri_count += @intCast(u32, path.stroke.len - 2);
+            if (path.fill.len >= 2) ctx.fill_tri_count += @intCast(path.fill.len - 2);
+            if (path.stroke.len >= 2) ctx.fill_tri_count += @intCast(path.stroke.len - 2);
             ctx.draw_call_count += 2;
         }
     }
@@ -1203,13 +1203,13 @@ pub const Context = struct {
 
         // Count triangles
         for (ctx.cache.paths.items) |path| {
-            if (path.stroke.len >= 2) ctx.fill_tri_count += @intCast(u32, path.stroke.len - 2);
+            if (path.stroke.len >= 2) ctx.fill_tri_count += @intCast(path.stroke.len - 2);
             ctx.draw_call_count += 2;
         }
     }
 
     pub fn createFontMem(ctx: *Context, name: [:0]const u8, data: []const u8) i32 {
-        return c.fonsAddFontMem(ctx.fs, name.ptr, @intToPtr([*]u8, @ptrToInt(data.ptr)), @intCast(c_int, data.len), 0, 0);
+        return c.fonsAddFontMem(ctx.fs, name.ptr, @ptrFromInt(@intFromPtr(data.ptr)), @intCast(data.len), 0, 0);
     }
 
     pub fn addFallbackFontId(ctx: *Context, base_font: Font, fallback_font: Font) bool {
@@ -1312,7 +1312,7 @@ pub const Context = struct {
         ctx.params.renderTriangles(ctx.params.user_ptr, &paint, state.composite_operation, &state.scissor, ctx.fringe_width, verts);
 
         ctx.draw_call_count += 1;
-        ctx.text_tri_count += @intCast(u32, verts.len) / 3;
+        ctx.text_tri_count += @as(u32, @intCast(verts.len)) / 3;
     }
 
     pub fn text(ctx: *Context, x: f32, y: f32, string: []const u8) f32 {
@@ -1329,7 +1329,7 @@ pub const Context = struct {
         c.fonsSetAlign(ctx.fs, state.text_align.toInt());
         c.fonsSetFont(ctx.fs, state.font_id);
 
-        const cverts = @intCast(u32, std.math.max(2, string.len) * 6); // conservative estimate.
+        const cverts: u32 = @intCast(@max(2, string.len) * 6); // conservative estimate.
         var verts = ctx.cache.allocTempVerts(cverts) catch return x;
         var nverts: u32 = 0;
 
@@ -1443,8 +1443,8 @@ pub const Context = struct {
             prev_iter = iter;
             positions[npos].str = iter.str;
             positions[npos].x = iter.x * invs;
-            positions[npos].minx = std.math.min(iter.x, q.x0) * invs;
-            positions[npos].maxx = std.math.max(iter.nextx, q.x1) * invs;
+            positions[npos].minx = @min(iter.x, q.x0) * invs;
+            positions[npos].maxx = @max(iter.nextx, q.x1) * invs;
             npos += 1;
             if (npos >= positions.len)
                 break;
@@ -1523,12 +1523,12 @@ pub const Context = struct {
                 // Always handle new lines.
                 const start = if (rowStart != null) rowStart.? else iter.str;
                 const e = if (rowEnd != null) rowEnd.? else iter.str;
-                var n = @ptrToInt(e) - @ptrToInt(start);
+                var n = @intFromPtr(e) - @intFromPtr(start);
                 rows[nrows].text = start[0..n];
                 rows[nrows].width = rowWidth * invs;
                 rows[nrows].minx = rowMinX * invs;
                 rows[nrows].maxx = rowMaxX * invs;
-                n = @ptrToInt(end) - @ptrToInt(iter.next);
+                n = @intFromPtr(end) - @intFromPtr(iter.next);
                 rows[nrows].next = iter.next[0..n];
                 nrows += 1;
                 if (nrows >= rows.len)
@@ -1589,12 +1589,12 @@ pub const Context = struct {
                         // The run length is too long, need to break to new line.
                         if (breakEnd == rowStart) {
                             // The current word is longer than the row length, just break it from here.
-                            var n = @ptrToInt(iter.str) - @ptrToInt(rowStart);
+                            var n = @intFromPtr(iter.str) - @intFromPtr(rowStart);
                             rows[nrows].text = rowStart.?[0..n];
                             rows[nrows].width = rowWidth * invs;
                             rows[nrows].minx = rowMinX * invs;
                             rows[nrows].maxx = rowMaxX * invs;
-                            n = @ptrToInt(end) - @ptrToInt(iter.str);
+                            n = @intFromPtr(end) - @intFromPtr(iter.str);
                             rows[nrows].next = iter.str[0..n];
                             nrows += 1;
                             if (nrows >= rows.len)
@@ -1610,12 +1610,12 @@ pub const Context = struct {
                             wordMinX = q.x0 - rowStartX;
                         } else {
                             // Break the line from the end of the last word, and start new line from the beginning of the new.
-                            var n = @ptrToInt(breakEnd) - @ptrToInt(rowStart);
+                            var n = @intFromPtr(breakEnd) - @intFromPtr(rowStart);
                             rows[nrows].text = rowStart.?[0..n];
                             rows[nrows].width = breakWidth * invs;
                             rows[nrows].minx = rowMinX * invs;
                             rows[nrows].maxx = breakMaxX * invs;
-                            n = @ptrToInt(end) - @ptrToInt(wordStart);
+                            n = @intFromPtr(end) - @intFromPtr(wordStart);
                             rows[nrows].next = wordStart.?[0..n];
                             nrows += 1;
                             if (nrows >= rows.len)
@@ -1642,7 +1642,7 @@ pub const Context = struct {
 
         // Break the line from the end of the last word, and start new line from the beginning of the new.
         if (rowStart != null) {
-            var n = @ptrToInt(rowEnd) - @ptrToInt(rowStart);
+            var n = @intFromPtr(rowEnd) - @intFromPtr(rowStart);
             rows[nrows].text = rowStart.?[0..n];
             rows[nrows].width = rowWidth * invs;
             rows[nrows].minx = rowMinX * invs;
@@ -1736,11 +1736,11 @@ pub const Context = struct {
                 };
                 const rminx = x + row.minx + dx;
                 const rmaxx = x + row.maxx + dx;
-                minx = std.math.min(minx, rminx);
-                maxx = std.math.max(maxx, rmaxx);
+                minx = @min(minx, rminx);
+                maxx = @max(maxx, rmaxx);
                 // Vertical bounds.
-                miny = std.math.min(miny, y + rminy);
-                maxy = std.math.max(maxy, y + rmaxy);
+                miny = @min(miny, y + rminy);
+                maxy = @max(maxy, y + rmaxy);
 
                 y += lineh * state.line_height;
             }
@@ -1788,11 +1788,11 @@ const Command = enum(i32) {
     winding = 4,
 
     fn fromValue(val: f32) Command {
-        return @intToEnum(Command, @floatToInt(i32, val));
+        return @enumFromInt(@as(i32, @intFromFloat(val)));
     }
 
     fn toValue(command: Command) f32 {
-        return @intToFloat(f32, @enumToInt(command));
+        return @floatFromInt(@intFromEnum(command));
     }
 };
 
@@ -1876,7 +1876,7 @@ const State = struct {
     font_id: i32,
 
     fn getFontScale(state: State) f32 {
-        return std.math.min(quantize(getAverageScale(state.xform), 0.01), 4.0);
+        return @min(quantize(getAverageScale(state.xform), 0.01), 4.0);
     }
 };
 
@@ -1942,7 +1942,7 @@ const PathCache = struct {
     fn addPath(cache: *PathCache) void {
         const path = cache.paths.addOne() catch return;
         path.* = std.mem.zeroes(Path);
-        path.first = @truncate(u32, cache.points.items.len);
+        path.first = @truncate(cache.points.items.len);
         path.winding = .ccw;
     }
 
@@ -2077,7 +2077,7 @@ fn polyReverse(pts: []Point) void {
 
 fn curveDivs(r: f32, arc: f32, tol: f32) u32 {
     const da = std.math.acos(r / (r + tol)) * 2;
-    return std.math.max(2, @floatToInt(u32, @ceil(arc / da)));
+    return @max(2, @as(u32, @intFromFloat(@ceil(arc / da))));
 }
 
 fn chooseBevel(bevel: bool, p0: Point, p1: Point, w: f32, x0: *f32, y0: *f32, x1: *f32, y1: *f32) void {
@@ -2114,7 +2114,7 @@ fn roundJoin(dst: *ArrayList(Vertex), p0: Point, p1: Point, lw: f32, rw: f32, lu
         dst.addOneAssumeCapacity().set(lx0, ly0, lu, 1);
         dst.addOneAssumeCapacity().set(p1.x - dlx0 * rw, p1.y - dly0 * rw, ru, 1);
 
-        const ncapf = @intToFloat(f32, ncap);
+        const ncapf: f32 = @floatFromInt(ncap);
         const n = std.math.clamp(@ceil(((a0 - a1) / std.math.pi) * ncapf), 2, ncapf);
         var i: f32 = 0;
         while (i < n) : (i += 1) {
@@ -2141,7 +2141,7 @@ fn roundJoin(dst: *ArrayList(Vertex), p0: Point, p1: Point, lw: f32, rw: f32, lu
         dst.addOneAssumeCapacity().set(p1.x + dlx0 * rw, p1.y + dly0 * rw, lu, 1);
         dst.addOneAssumeCapacity().set(rx0, ry0, ru, 1);
 
-        const ncapf = @intToFloat(f32, ncap);
+        const ncapf: f32 = @floatFromInt(ncap);
         const n = std.math.clamp(@ceil(((a0 - a1) / std.math.pi) * ncapf), 2, ncapf);
         var i: f32 = 0;
         while (i < n) : (i += 1) {
@@ -2262,7 +2262,7 @@ fn roundCapStart(dst: *ArrayList(Vertex), p: Point, dx: f32, dy: f32, w: f32, nc
     const dly = -dx;
     var i: u32 = 0;
     while (i < ncap) : (i += 1) {
-        const a = @intToFloat(f32, i) / @intToFloat(f32, ncap - 1) * std.math.pi;
+        const a = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(ncap - 1)) * std.math.pi;
         const ax = @cos(a) * w;
         const ay = @sin(a) * w;
         dst.addOneAssumeCapacity().set(px - dlx * ax - dx * ay, py - dly * ax - dy * ay, @"u0", 1);
@@ -2282,7 +2282,7 @@ fn roundCapEnd(dst: *ArrayList(Vertex), p: Point, dx: f32, dy: f32, w: f32, ncap
     dst.addOneAssumeCapacity().set(px - dlx * w, py - dly * w, @"u1", 1);
     var i: u32 = 0;
     while (i < ncap) : (i += 1) {
-        const a = @intToFloat(f32, i) / @intToFloat(f32, ncap - 1) * std.math.pi;
+        const a = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(ncap - 1)) * std.math.pi;
         const ax = @cos(a) * w;
         const ay = @sin(a) * w;
         dst.addOneAssumeCapacity().set(px, py, 0.5, 1);
