@@ -49,7 +49,7 @@ pub fn init(app: *App) !void {
 
     const shader_module = device.createShaderModule(&.{
         .label = "shader module",
-        .next_in_chain = .{ .wgsl_descriptor = &.{ .source = @embedFile("full_screen.wgsl") } },
+        .next_in_chain = .{ .wgsl_descriptor = &.{ .code = @embedFile("full_screen.wgsl") } },
     });
     defer shader_module.release();
 
@@ -125,7 +125,7 @@ pub fn update(app: *App) !bool {
         else => {},
     };
 
-    const back_buffer_view = app.core.swapChain().getCurrentTextureView();
+    const back_buffer_view = app.core.swapChain().getCurrentTextureView() orelse return error.NoBackBuffer;
     defer back_buffer_view.release();
 
     const color_attachment = gpu.RenderPassColorAttachment{
@@ -164,16 +164,16 @@ pub fn update(app: *App) !bool {
 
     const window_size = app.core.size();
     const fb_size = app.core.framebufferSize();
-    const px_ratio = @intToFloat(f32, fb_size.width) / @intToFloat(f32, window_size.width);
-    app.vg.beginFrame(@intToFloat(f32, window_size.width), @intToFloat(f32, window_size.height), px_ratio);
+    const px_ratio = @as(f32, @floatFromInt(fb_size.width)) / @as(f32, @floatFromInt(window_size.width));
+    app.vg.beginFrame(@floatFromInt(window_size.width), @floatFromInt(window_size.height), px_ratio);
 
     const m_pos = app.cursor_position;
     app.demo.draw(
         app.vg,
-        @floatCast(f32, m_pos.x),
-        @floatCast(f32, m_pos.y),
-        @intToFloat(f32, window_size.width),
-        @intToFloat(f32, window_size.height),
+        @floatCast(m_pos.x),
+        @floatCast(m_pos.y),
+        @floatFromInt(window_size.width),
+        @floatFromInt(window_size.height),
         app.total_time,
         app.blowup,
     );

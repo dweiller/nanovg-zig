@@ -12,7 +12,7 @@ pub fn build(b: *std.build.Builder) !void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const optimize = b.standardOptimizeOption(.{});
 
-    const gpu_module = mach.module(b).dependencies.get("core").?.dependencies.get("gpu").?;
+    const gpu_module = mach.module(b, optimize, target).dependencies.get("core").?.dependencies.get("gpu").?;
 
     const nanovg = b.createModule(.{
         .source_file = .{ .path = "../src/nanovg.zig" },

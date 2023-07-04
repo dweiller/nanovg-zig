@@ -107,7 +107,7 @@ const WebGPUContext = struct {
     }
 
     fn castPtr(ptr: *anyopaque) *WebGPUContext {
-        return @ptrCast(*WebGPUContext, @alignCast(@alignOf(*WebGPUContext), ptr));
+        return @ptrCast(@alignCast(ptr));
     }
 
     // TODO: alloc/find texture
@@ -227,7 +227,7 @@ const FragUniforms = struct {
         frag.outer_color = premulColor(paint.outer_color);
 
         if (scissor.extent[0] < -0.5 or scissor.extent[1] < -0.5) {
-            std.mem.set(f32, &frag.scissor_mat, 0);
+            @memset(&frag.scissor_mat, 0);
             frag.scissor_extent[0] = 1;
             frag.scissor_extent[1] = 1;
             frag.scissor_scale[0] = 1;
@@ -260,7 +260,7 @@ const FragUniforms = struct {
             } else {
                 _ = nvg.transformInverse(&invxform, &paint.xform);
             }
-            frag.shader_type = @intToFloat(f32, @enumToInt(ShaderType.fill_image));
+            frag.shader_type = @floatFromInt(@intFromEnum(ShaderType.fill_image));
 
             if (tex.tex_type == .rgba) {
                 frag.tex_type = if (tex.flags.premultiplied) 0 else 1;
@@ -270,7 +270,7 @@ const FragUniforms = struct {
                 frag.tex_type = 3;
             }
         } else {
-            frag.shader_type = @intToFloat(f32, @enumToInt(ShaderType.fill_gradient));
+            frag.shader_type = @floatFromInt(@intFromEnum(ShaderType.fill_gradient));
             frag.radius = paint.radius;
             frag.feather = paint.feather;
             _ = nvg.transformInverse(&invxform, &paint.xform);
@@ -314,7 +314,7 @@ const Pass = struct {
     fn init(pass: *Pass, device: *gpu.Device, swap_chain_format: gpu.Texture.Format, edge_antialias: bool) !void {
         const shader_module = device.createShaderModule(&gpu.ShaderModule.Descriptor{
             .label = "nanovg shader module",
-            .next_in_chain = .{ .wgsl_descriptor = &.{ .source = @embedFile("nanovg.wgsl") } },
+            .next_in_chain = .{ .wgsl_descriptor = &.{ .code = @embedFile("nanovg.wgsl") } },
         });
 
         const blend = gpu.BlendState{
@@ -944,8 +944,8 @@ fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32,
     var tex = try ctx.allocTexture();
 
     const tex_size = gpu.Extent3D{
-        .width = @intCast(u32, w),
-        .height = @intCast(u32, h),
+        .width = @intCast(w),
+        .height = @intCast(h),
     };
 
     const format: gpu.Texture.Format = switch (tex_type) {
@@ -994,8 +994,8 @@ fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32,
     const color_size: u32 = if (tex_type == .rgba) 4 else 1;
 
     const data_layout = gpu.Texture.DataLayout{
-        .bytes_per_row = @intCast(u32, w) * color_size,
-        .rows_per_image = @intCast(u32, h),
+        .bytes_per_row = @as(u32, @intCast(w)) * color_size,
+        .rows_per_image = @intCast(h),
     };
 
     if (data) |data_raw| {
@@ -1035,17 +1035,17 @@ fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: i32, y: i32, w_arg: 
         .none => {},
         .alpha, .rgba => {
             const color_size: u32 = if (tex.tex_type == .rgba) 4 else 1;
-            const y0 = @intCast(u32, y) * tex.size.width;
-            const data = @ptrCast([*]const u8, &data_arg.?[y0 * color_size]);
+            const y0 = @as(u32, @intCast(y)) * tex.size.width;
+            const data: [*]const u8 = @ptrCast(&data_arg.?[y0 * color_size]);
             const x = 0;
             const w = tex.size.width;
 
             const texture = tex.tex;
             ctx.device.getQueue().writeTexture(
-                &gpu.ImageCopyTexture{ .texture = texture, .origin = .{ .x = x, .y = @intCast(u32, y) } },
+                &gpu.ImageCopyTexture{ .texture = texture, .origin = .{ .x = x, .y = @intCast(y) } },
                 &tex.data_layout,
-                &.{ .width = @intCast(u32, w), .height = @intCast(u32, h) },
-                data[0 .. color_size * w * @intCast(u32, h)],
+                &.{ .width = @as(u32, @intCast(w)), .height = @as(u32, @intCast(h)) },
+                data[0 .. color_size * w * @as(u32, @intCast(h))],
             );
         },
     }
@@ -1055,8 +1055,8 @@ fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: i32, y: i32, w_arg: 
 fn renderGetTextureSize(uptr: *anyopaque, image: i32, w: *i32, h: *i32) i32 {
     const ctx = WebGPUContext.castPtr(uptr);
     const tex = ctx.getTexture(image) orelse return 0;
-    w.* = @intCast(i32, tex.size.width);
-    h.* = @intCast(i32, tex.size.height);
+    w.* = @intCast(tex.size.width);
+    h.* = @intCast(tex.size.height);
     return 1;
 }
 
@@ -1071,8 +1071,8 @@ fn renderViewport(uptr: *anyopaque, width: f32, height: f32, devicePixelRatio: f
             tex.release();
         }
         const buffer_size = gpu.Extent3D{
-            .width = @floatToInt(u32, width * devicePixelRatio),
-            .height = @floatToInt(u32, height * devicePixelRatio),
+            .width = @intFromFloat(width * devicePixelRatio),
+            .height = @intFromFloat(height * devicePixelRatio),
         };
         ctx.depth_stencil = ctx.device.createTexture(&gpu.Texture.Descriptor{
             .label = "nanovg depth/stencil texture",
@@ -1121,7 +1121,7 @@ fn renderFlush(uptr: *anyopaque) void {
         }
         command_encoder.writeBuffer(ctx.pass.vert_buf, 0, ctx.verts.items);
 
-        const back_buffer_view = ctx.swap_chain.*.getCurrentTextureView();
+        const back_buffer_view = ctx.swap_chain.*.getCurrentTextureView() orelse return;
         defer back_buffer_view.release();
         for (ctx.calls.items) |call| {
             // TODO: equivalent of glBlendFuncSeparate()
@@ -1168,11 +1168,11 @@ fn renderFill(
         .call_type = if (convex) .convexfill else .fill,
         .triangle_offset = 0,
         .triangle_count = if (convex) 0 else 4,
-        .path_offset = @intCast(u32, ctx.paths.items.len),
-        .path_count = @intCast(u32, paths.len),
+        .path_offset = @intCast(ctx.paths.items.len),
+        .path_count = @intCast(paths.len),
         .image = paint.image.handle,
         .colormap = paint.colormap.handle,
-        .uniform_offset = @intCast(u32, ctx.uniforms.items.len),
+        .uniform_offset = @intCast(ctx.uniforms.items.len),
         // TODO: blending?
     };
 
@@ -1186,11 +1186,11 @@ fn renderFill(
         const copy = ctx.paths.addOneAssumeCapacity();
         copy.* = std.mem.zeroes(Path);
         if (path.fill.len > 0) {
-            copy.fill_offset = @intCast(u32, ctx.verts.items.len);
-            copy.fill_count = @intCast(u32, path.fill.len);
+            copy.fill_offset = @intCast(ctx.verts.items.len);
+            copy.fill_count = @intCast(path.fill.len);
             // BUG: need to turn triangle fan into individual triangles as webgpu doesn't support triangle fan topology
             const v0 = path.fill[0];
-            for (path.fill[1..path.fill.len - 1], path.fill[2..]) |vert1, vert2| {
+            for (path.fill[1 .. path.fill.len - 1], path.fill[2..]) |vert1, vert2| {
                 ctx.verts.appendAssumeCapacity(v0);
                 ctx.verts.appendAssumeCapacity(vert1);
                 ctx.verts.appendAssumeCapacity(vert2);
@@ -1198,8 +1198,8 @@ fn renderFill(
             }
         }
         if (path.stroke.len > 0) {
-            copy.stroke_offset = @intCast(u32, ctx.verts.items.len);
-            copy.stroke_count = @intCast(u32, path.stroke.len);
+            copy.stroke_offset = @intCast(ctx.verts.items.len);
+            copy.stroke_count = @intCast(path.stroke.len);
             ctx.verts.appendSliceAssumeCapacity(path.stroke);
         }
     }
@@ -1207,7 +1207,7 @@ fn renderFill(
     // Setup uniforms for draw calls
     if (call.call_type == .fill) {
         // Quad
-        call.triangle_offset = @intCast(u32, ctx.verts.items.len);
+        call.triangle_offset = @intCast(ctx.verts.items.len);
         ctx.verts.appendAssumeCapacity(.{ .x = bounds[2], .y = bounds[3], .u = 0.5, .v = 1.0 });
         ctx.verts.appendAssumeCapacity(.{ .x = bounds[2], .y = bounds[1], .u = 0.5, .v = 1.0 });
         ctx.verts.appendAssumeCapacity(.{ .x = bounds[0], .y = bounds[3], .u = 0.5, .v = 1.0 });
@@ -1218,7 +1218,7 @@ fn renderFill(
         const frag = ctx.uniforms.addOneAssumeCapacity();
         frag.* = std.mem.zeroes(FragUniforms);
         frag.stroke_thr = -1.0;
-        frag.shader_type = @intToFloat(f32, @enumToInt(ShaderType.simple));
+        frag.shader_type = @floatFromInt(@intFromEnum(ShaderType.simple));
         // Fill shader
         _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, fringe, fringe, -1.0, ctx);
     } else {
@@ -1245,13 +1245,13 @@ fn renderStroke(
     const call = ctx.calls.addOne(ctx.allocator) catch return;
     call.* = Call{
         .call_type = .stroke,
-        .path_offset = @intCast(u32, ctx.paths.items.len),
-        .path_count = @intCast(u32, paths.len),
+        .path_offset = @intCast(ctx.paths.items.len),
+        .path_count = @intCast(paths.len),
         .image = paint.image.handle,
         .colormap = paint.colormap.handle,
         .triangle_offset = 0,
         .triangle_count = 0,
-        .uniform_offset = @intCast(u32, ctx.uniforms.items.len),
+        .uniform_offset = @intCast(ctx.uniforms.items.len),
         // TODO: blending?
     };
     ctx.paths.ensureUnusedCapacity(ctx.allocator, paths.len) catch return;
@@ -1264,8 +1264,8 @@ fn renderStroke(
         const copy = ctx.paths.addOneAssumeCapacity();
         copy.* = std.mem.zeroes(Path);
         if (path.stroke.len > 0) {
-            copy.stroke_offset = @intCast(u32, ctx.verts.items.len);
-            copy.stroke_count = @intCast(u32, path.stroke.len);
+            copy.stroke_offset = @intCast(ctx.verts.items.len);
+            copy.stroke_count = @intCast(path.stroke.len);
             ctx.verts.appendSliceAssumeCapacity(path.stroke);
         }
     }
@@ -1303,15 +1303,15 @@ fn renderTriangles(
         .path_offset = 0,
         .path_count = 0,
         // TODO: blending?
-        .triangle_offset = @intCast(u32, ctx.verts.items.len),
-        .triangle_count = @intCast(u32, verts.len),
-        .uniform_offset = @intCast(u32, ctx.uniforms.items.len),
+        .triangle_offset = @intCast(ctx.verts.items.len),
+        .triangle_count = @intCast(verts.len),
+        .uniform_offset = @intCast(ctx.uniforms.items.len),
     };
 
     ctx.verts.appendSlice(ctx.allocator, verts) catch return;
     const frag = ctx.uniforms.addOne(ctx.allocator) catch return;
     _ = frag.fromPaint(paint, scissor, 1, fringe, -1, ctx);
-    frag.shader_type = @intToFloat(f32, @enumToInt(ShaderType.image));
+    frag.shader_type = @floatFromInt(@intFromEnum(ShaderType.image));
 }
 
 fn renderDelete(uptr: *anyopaque) void {
