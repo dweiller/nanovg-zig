@@ -1,6 +1,6 @@
 const std = @import("std");
 const mach = @import("mach");
-const gpu = @import("gpu");
+const gpu = mach.core.gpu;
 
 const nvg = @import("nanovg");
 const Demo = @import("demo");
@@ -8,12 +8,11 @@ const PerfGraph = @import("perf");
 
 pub const App = @This();
 
-core: mach.Core,
 vg: nvg,
 demo: Demo,
 fps: PerfGraph,
 blowup: bool,
-cursor_position: mach.Core.Position,
+cursor_position: mach.core.Position,
 timer: mach.Timer,
 total_time: f32,
 clear_pipeline: *gpu.RenderPipeline,
@@ -23,21 +22,21 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 pub fn init(app: *App) !void {
     const allocator = gpa.allocator();
-    try app.core.init(allocator, .{
+    try mach.core.init(.{
         .title = "nanovg-mach",
         .size = .{
             .width = 1000,
             .height = 1000,
         },
     });
-    app.core.setVSync(.none);
+    mach.core.setVSync(.none);
 
-    var device = app.core.device();
-    const swap_chain_format = app.core.descriptor().format;
+    var device = mach.core.device;
+    const swap_chain_format = mach.core.descriptor.format;
     app.vg = try nvg.wgpu.init(
         allocator,
         device,
-        &app.core.internal.swap_chain,
+        &mach.core.swap_chain,
         swap_chain_format,
         .{ .antialias = true },
     );
@@ -110,11 +109,11 @@ const quad_vert_data = [_]f32{
 pub fn deinit(app: *App) void {
     app.demo.free(app.vg);
     app.vg.deinit();
-    app.core.deinit();
+    mach.core.deinit();
 }
 
 pub fn update(app: *App) !bool {
-    var events = app.core.pollEvents();
+    var events = mach.core.pollEvents();
     while (events.next()) |event| switch (event) {
         .key_press => |ev| switch (ev.key) {
             .space => app.blowup = !app.blowup,
@@ -125,7 +124,7 @@ pub fn update(app: *App) !bool {
         else => {},
     };
 
-    const back_buffer_view = app.core.swapChain().getCurrentTextureView() orelse return error.NoBackBuffer;
+    const back_buffer_view = mach.core.swap_chain.getCurrentTextureView() orelse return error.NoBackBuffer;
     defer back_buffer_view.release();
 
     const color_attachment = gpu.RenderPassColorAttachment{
@@ -143,7 +142,7 @@ pub fn update(app: *App) !bool {
         .color_attachment_count = 1,
     };
 
-    const device = app.core.device();
+    const device = mach.core.device;
     const command_encoder = device.createCommandEncoder(null);
     {
         const pass_encoder = command_encoder.beginRenderPass(&render_pass_descriptor);
@@ -162,9 +161,10 @@ pub fn update(app: *App) !bool {
     app.total_time += delta_time;
     app.fps.update(delta_time);
 
-    const window_size = app.core.size();
-    const fb_size = app.core.framebufferSize();
-    const px_ratio = @as(f32, @floatFromInt(fb_size.width)) / @as(f32, @floatFromInt(window_size.width));
+    const window_size = mach.core.size();
+    const fb_width = mach.core.descriptor.width;
+
+    const px_ratio = @as(f32, @floatFromInt(fb_width)) / @as(f32, @floatFromInt(window_size.width));
     app.vg.beginFrame(@floatFromInt(window_size.width), @floatFromInt(window_size.height), px_ratio);
 
     const m_pos = app.cursor_position;
@@ -181,6 +181,6 @@ pub fn update(app: *App) !bool {
 
     app.vg.endFrame();
 
-    app.core.swapChain().present();
+    mach.core.swap_chain.present();
     return false;
 }

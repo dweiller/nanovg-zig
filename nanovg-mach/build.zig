@@ -1,7 +1,7 @@
 const std = @import("std");
-const mach = @import("mach/build.zig");
+const mach = @import("mach");
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -12,11 +12,8 @@ pub fn build(b: *std.build.Builder) !void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const optimize = b.standardOptimizeOption(.{});
 
-    const gpu_module = mach.module(b, optimize, target).dependencies.get("core").?.dependencies.get("gpu").?;
-
     const nanovg = b.createModule(.{
         .source_file = .{ .path = "../src/nanovg.zig" },
-        .dependencies = &.{ .{ .name = "gpu", .module = gpu_module } },
     });
     const nanovg_mod_dep = std.Build.ModuleDependency{ .name = "nanovg", .module = nanovg };
 
@@ -39,19 +36,22 @@ pub fn build(b: *std.build.Builder) !void {
             nanovg_mod_dep,
             .{ .name = "demo", .module = demo },
             .{ .name = "perf", .module = perf },
-            .{ .name = "gpu", .module =  gpu_module}
         },
     });
 
-    try nanovg_demo.link(.{});
-    nanovg_demo.step.addIncludePath("../src");
-    nanovg_demo.step.addCSourceFile("../src/fontstash.c", &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" });
-    nanovg_demo.step.addCSourceFile("../src/stb_image.c", &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" });
-    nanovg_demo.step.linkLibC();
-    nanovg_demo.install();
+    const gpu_module = nanovg_demo.core.compile.modules.get("mach-core").?.dependencies.get("mach-gpu").?;
+    try nanovg.dependencies.put("gpu", gpu_module);
 
-    const nanovg_demo_run = nanovg_demo.addRunArtifact();
+    try nanovg_demo.link();
+    nanovg_demo.compile.addIncludePath(.{ .path = "../src" });
+    nanovg_demo.compile.addCSourceFiles(.{
+        .files = &.{ "../src/fontstash.c", "../src/stb_image.c" },
+        .flags = &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" },
+    });
+    nanovg_demo.compile.linkLibC();
+
+    nanovg_demo.run.step.dependOn(&nanovg_demo.install.step);
 
     const nanostep = b.step("run", "Run nanovg-demo");
-    nanostep.dependOn(&nanovg_demo_run.step);
+    nanostep.dependOn(&nanovg_demo.run.step);
 }
