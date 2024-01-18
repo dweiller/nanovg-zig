@@ -74,7 +74,7 @@ const WebGPUContext = struct {
         swap_chain_format: gpu.Texture.Format,
         options: Options,
     ) !*WebGPUContext {
-        var self = try allocator.create(WebGPUContext);
+        const self = try allocator.create(WebGPUContext);
         self.* = WebGPUContext{
             .allocator = allocator,
             .device = device,
