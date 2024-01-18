@@ -6,8 +6,6 @@ const nvg = @import("nanovg.zig");
 const internal = @import("internal.zig");
 
 pub const Options = struct {
-    antialias: bool = false,
-    stencil_strokes: bool = false,
     // debug: bool = false,
 };
 
@@ -31,7 +29,6 @@ pub fn init(
     );
     const params = internal.Params{
         .user_ptr = webgpu_context,
-        .edge_antialias = options.antialias,
         .renderCreate = renderCreate,
         .renderCreateTexture = renderCreateTexture,
         .renderDeleteTexture = renderDeleteTexture,
@@ -199,26 +196,31 @@ fn xformToMat3x4(m3: *[12]f32, t: *const [6]f32) void {
     m3[11] = 0;
 }
 
-fn premulColor(c: nvg.Color) nvg.Color {
+fn premulColor(c: nvg.Color) Color {
     return .{ .r = c.r * c.a, .g = c.g * c.a, .b = c.b * c.a, .a = c.a };
 }
+
+const Color = extern struct {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+};
 
 const FragUniforms = struct {
     scissor_mat: [12]f32,
     paint_mat: [12]f32,
-    inner_color: nvg.Color,
-    outer_color: nvg.Color,
+    inner_color: Color,
+    outer_color: Color,
     scissor_extent: [2]f32,
     scissor_scale: [2]f32,
     extent: [2]f32,
     radius: f32,
     feather: f32,
-    stroke_mult: f32,
-    stroke_thr: f32,
     tex_type: f32,
     shader_type: f32,
 
-    fn fromPaint(frag: *FragUniforms, paint: *nvg.Paint, scissor: *internal.Scissor, width: f32, fringe: f32, stroke_thr: f32, ctx: *WebGPUContext) i32 {
+    fn fromPaint(frag: *FragUniforms, paint: *nvg.Paint, scissor: *internal.Scissor, ctx: *WebGPUContext) i32 {
         var invxform: [6]f32 = undefined;
 
         frag.* = std.mem.zeroes(FragUniforms);
@@ -237,13 +239,11 @@ const FragUniforms = struct {
             xformToMat3x4(&frag.scissor_mat, &invxform);
             frag.scissor_extent[0] = scissor.extent[0];
             frag.scissor_extent[1] = scissor.extent[1];
-            frag.scissor_scale[0] = @sqrt(scissor.xform[0] * scissor.xform[0] + scissor.xform[2] * scissor.xform[2]) / fringe;
-            frag.scissor_scale[1] = @sqrt(scissor.xform[1] * scissor.xform[1] + scissor.xform[3] * scissor.xform[3]) / fringe;
+            frag.scissor_scale[0] = @sqrt(scissor.xform[0] * scissor.xform[0] + scissor.xform[2] * scissor.xform[2]);
+            frag.scissor_scale[1] = @sqrt(scissor.xform[1] * scissor.xform[1] + scissor.xform[3] * scissor.xform[3]);
         }
 
-        std.mem.copy(f32, &frag.extent, &paint.extent);
-        frag.stroke_mult = (width * 0.5 + fringe * 0.5) / fringe;
-        frag.stroke_thr = stroke_thr;
+        @memcpy(&frag.extent, &paint.extent);
 
         if (paint.image.handle != 0) {
             const tex = ctx.getTexture(paint.image.handle) orelse return 0;
@@ -291,7 +291,6 @@ const Pass = struct {
     },
     fill: struct {
         stencil: *gpu.RenderPipeline,
-        antialias: *gpu.RenderPipeline,
         fill: *gpu.RenderPipeline,
     },
     convex: struct {
@@ -311,7 +310,7 @@ const Pass = struct {
     fallback_texture: *gpu.Texture,
     fallback_texture_bind_group: *gpu.BindGroup,
 
-    fn init(pass: *Pass, device: *gpu.Device, swap_chain_format: gpu.Texture.Format, edge_antialias: bool) !void {
+    fn init(pass: *Pass, device: *gpu.Device, swap_chain_format: gpu.Texture.Format) !void {
         const shader_module = device.createShaderModule(&gpu.ShaderModule.Descriptor{
             .label = "nanovg shader module",
             .next_in_chain = .{ .wgsl_descriptor = &.{ .code = @embedFile("nanovg.wgsl") } },
@@ -405,14 +404,14 @@ const Pass = struct {
 
         const fragment_state = gpu.FragmentState{
             .module = shader_module,
-            .entry_point = if (edge_antialias) "fragEdgeAA" else "fragNoEdgeAA",
+            .entry_point = "fragNoEdgeAA",
             .targets = &[1]gpu.ColorTargetState{color_target_write_all},
             .target_count = 1,
         };
 
         const fragment_state_no_write = gpu.FragmentState{
             .module = shader_module,
-            .entry_point = if (edge_antialias) "fragEdgeAA" else "fragNoEdgeAA",
+            .entry_point = "fragNoEdgeAA",
             .targets = &[1]gpu.ColorTargetState{color_target_write_none},
             .target_count = 1,
         };
@@ -513,15 +512,6 @@ const Pass = struct {
             },
         });
 
-        pass.fill.antialias = device.createRenderPipeline(&gpu.RenderPipeline.Descriptor{
-            .label = "nanovg fill fringe pipeline",
-            .vertex = vertex_state,
-            .fragment = &fragment_state,
-            .primitive = .{ .topology = .triangle_strip, .cull_mode = .back },
-            .depth_stencil = &depth_stencil_equal_keep,
-            .layout = pipeline_layout,
-        });
-
         pass.fill.fill = device.createRenderPipeline(&gpu.RenderPipeline.Descriptor{
             .label = "nanovg fill fill pipeline",
             .vertex = vertex_state,
@@ -566,10 +556,11 @@ const Pass = struct {
             .layout = pipeline_layout,
         });
 
+        const uniform_buffer_size = comptime std.mem.alignForward(usize, @sizeOf(FragUniforms), 16);
         const uniform_buffer = device.createBuffer(&gpu.Buffer.Descriptor{
             .label = "nanovg uniform buffer",
             .usage = .{ .uniform = true, .copy_dst = true },
-            .size = @sizeOf(FragUniforms),
+            .size = uniform_buffer_size,
         });
         pass.uniforms = uniform_buffer;
 
@@ -605,7 +596,7 @@ const Pass = struct {
             .layout = bind_group_layout,
             .entries = &[3]gpu.BindGroup.Entry{
                 gpu.BindGroup.Entry.buffer(0, view_buffer, 0, @sizeOf([2]f32)),
-                gpu.BindGroup.Entry.buffer(1, uniform_buffer, 0, @sizeOf(FragUniforms)),
+                gpu.BindGroup.Entry.buffer(1, uniform_buffer, 0, uniform_buffer_size),
                 gpu.BindGroup.Entry.sampler(2, sampler),
             },
             .entry_count = 3,
@@ -625,7 +616,6 @@ const Pass = struct {
         self.stroke.stencil_aa.release();
         self.stroke.stencil_base.release();
         self.stroke.stencil_clear.release();
-        self.fill.antialias.release();
         self.fill.stencil.release();
         self.fill.fill.release();
         self.convex.fill.release();
@@ -736,19 +726,6 @@ const Call = struct {
             },
         };
 
-        if (ctx.options.antialias) {
-            const pass_encoder = ctx.startEncoding(command_encoder, desc);
-            pass_encoder.setPipeline(ctx.pass.fill.antialias);
-            ctx.setTextures(pass_encoder, call);
-
-            // Draw fringes
-            for (paths) |path| {
-                pass_encoder.draw(path.stroke_count, 1, path.stroke_offset, 0);
-            }
-            pass_encoder.end();
-            pass_encoder.release();
-        }
-
         // Draw fill
         const pass_encoder = ctx.startEncoding(command_encoder, desc);
         pass_encoder.setPipeline(ctx.pass.fill.fill);
@@ -806,98 +783,30 @@ const Call = struct {
     ) void {
         const paths = ctx.paths.items[call.path_offset..][0..call.path_count];
 
-        if (ctx.options.stencil_strokes) {
-            {
-                const desc = gpu.RenderPassDescriptor{
-                    .label = "stroke render pass 1",
-                    .color_attachments = &[1]gpu.RenderPassColorAttachment{
-                        .{
-                            .view = back_buffer_view,
-                            .load_op = .load,
-                            .store_op = .store,
-                            .clear_value = clear_value,
-                        },
-                    },
-                    .color_attachment_count = 1,
-                    .depth_stencil_attachment = &gpu.RenderPassDepthStencilAttachment{
-                        .view = ctx.depth_stencil_view.?,
-                        .stencil_load_op = .load,
-                        .stencil_store_op = .store,
-                    },
-                };
-                // fill stroke base
-                ctx.setUniforms(command_encoder, call.uniform_offset + 1);
-                const pass_encoder = ctx.startEncoding(command_encoder, desc);
-                pass_encoder.setStencilReference(0x00);
-                ctx.setTextures(pass_encoder, call);
-                pass_encoder.setPipeline(ctx.pass.stroke.stencil_base);
-                for (paths) |path| {
-                    pass_encoder.draw(path.stroke_count, 1, path.stroke_offset, 0);
-                }
-                pass_encoder.end();
-                pass_encoder.release();
-            }
-            {
-                const desc = gpu.RenderPassDescriptor{
-                    .label = "stroke render pass 2",
-                    .color_attachments = &[1]gpu.RenderPassColorAttachment{
-                        .{
-                            .view = back_buffer_view,
-                            .load_op = .load,
-                            .store_op = .store,
-                            .clear_value = clear_value,
-                        },
-                    },
-                    .color_attachment_count = 1,
-                    .depth_stencil_attachment = &gpu.RenderPassDepthStencilAttachment{
-                        .view = ctx.depth_stencil_view.?,
-                        .stencil_load_op = .load,
-                        .stencil_store_op = .store,
-                    },
-                };
-                // draw anti-aliased pixels
-                ctx.setUniforms(command_encoder, call.uniform_offset);
-                const pass_encoder = ctx.startEncoding(command_encoder, desc);
-                pass_encoder.setStencilReference(0x00);
-                ctx.setTextures(pass_encoder, call);
-                pass_encoder.setPipeline(ctx.pass.stroke.stencil_aa);
-                for (paths) |path| {
-                    pass_encoder.draw(path.stroke_count, 1, path.stroke_offset, 0);
-                }
-                // clear stencil buffer
-                pass_encoder.setPipeline(ctx.pass.stroke.stencil_clear);
-                for (paths) |path| {
-                    pass_encoder.draw(path.stroke_count, 1, path.stroke_offset, 0);
-                }
-                pass_encoder.end();
-                pass_encoder.release();
-            }
-        } else {
-            const desc = gpu.RenderPassDescriptor{
-                .label = "stroke render pass",
-                .color_attachments = &[1]gpu.RenderPassColorAttachment{
-                    .{
-                        .view = back_buffer_view,
-                        .load_op = .load,
-                        .store_op = .store,
-                        .clear_value = clear_value,
-                    },
+        const desc = gpu.RenderPassDescriptor{
+            .label = "stroke render pass",
+            .color_attachments = &[1]gpu.RenderPassColorAttachment{
+                .{
+                    .view = back_buffer_view,
+                    .load_op = .load,
+                    .store_op = .store,
+                    .clear_value = clear_value,
                 },
-                .color_attachment_count = 1,
-            };
-            ctx.setUniforms(command_encoder, call.uniform_offset);
-            const pass_encoder = ctx.startEncoding(command_encoder, desc);
-            pass_encoder.setPipeline(ctx.pass.stroke.basic);
+            },
+            .color_attachment_count = 1,
+        };
+        ctx.setUniforms(command_encoder, call.uniform_offset);
+        const pass_encoder = ctx.startEncoding(command_encoder, desc);
+        pass_encoder.setPipeline(ctx.pass.stroke.basic);
 
-            ctx.setTextures(pass_encoder, call);
+        ctx.setTextures(pass_encoder, call);
 
-            // Draw Strokes
-            for (paths) |path| {
-                pass_encoder.draw(path.stroke_count, 1, path.stroke_offset, 0);
-            }
-            pass_encoder.end();
-            pass_encoder.release();
+        // Draw Strokes
+        for (paths) |path| {
+            pass_encoder.draw(path.stroke_count, 1, path.stroke_offset, 0);
         }
+        pass_encoder.end();
+        pass_encoder.release();
     }
 
     fn triangles(
@@ -935,10 +844,10 @@ const Call = struct {
 fn renderCreate(uptr: *anyopaque) !void {
     const ctx = WebGPUContext.castPtr(uptr);
 
-    try ctx.pass.init(ctx.device, ctx.swap_chain_format, ctx.options.antialias);
+    try ctx.pass.init(ctx.device, ctx.swap_chain_format);
 }
 
-fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: i32, h: i32, flags: nvg.ImageFlags, data: ?[*]const u8) !i32 {
+fn renderCreateTexture(uptr: *anyopaque, tex_type: internal.TextureType, w: u32, h: u32, flags: nvg.ImageFlags, data: ?[]const u8) !i32 {
     const ctx = WebGPUContext.castPtr(uptr);
 
     var tex = try ctx.allocTexture();
@@ -1025,7 +934,7 @@ fn renderDeleteTexture(uptr: *anyopaque, image: i32) void {
     tex.tex.release();
 }
 
-fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: i32, y: i32, w_arg: i32, h: i32, data_arg: ?[*]const u8) i32 {
+fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: u32, y: u32, w_arg: u32, h: u32, data_arg: ?[]const u8) i32 {
     const ctx = WebGPUContext.castPtr(uptr);
     _ = x_arg;
     _ = w_arg;
@@ -1052,7 +961,7 @@ fn renderUpdateTexture(uptr: *anyopaque, image: i32, x_arg: i32, y: i32, w_arg: 
     return 1;
 }
 
-fn renderGetTextureSize(uptr: *anyopaque, image: i32, w: *i32, h: *i32) i32 {
+fn renderGetTextureSize(uptr: *anyopaque, image: i32, w: *u32, h: *u32) i32 {
     const ctx = WebGPUContext.castPtr(uptr);
     const tex = ctx.getTexture(image) orelse return 0;
     w.* = @intCast(tex.size.width);
@@ -1151,10 +1060,11 @@ fn renderFill(
     paint: *nvg.Paint,
     composite_operation: nvg.CompositeOperationState,
     scissor: *internal.Scissor,
-    fringe: f32,
     bounds: [4]f32,
+    clip_paths: []const internal.Path,
     paths: []const internal.Path,
 ) void {
+    _ = clip_paths;
     const ctx = WebGPUContext.castPtr(uptr);
 
     const call = ctx.calls.addOne(ctx.allocator) catch return;
@@ -1217,14 +1127,13 @@ fn renderFill(
         // Simple shader for stencil
         const frag = ctx.uniforms.addOneAssumeCapacity();
         frag.* = std.mem.zeroes(FragUniforms);
-        frag.stroke_thr = -1.0;
         frag.shader_type = @floatFromInt(@intFromEnum(ShaderType.simple));
         // Fill shader
-        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, fringe, fringe, -1.0, ctx);
+        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, ctx);
     } else {
         ctx.uniforms.ensureUnusedCapacity(ctx.allocator, 1) catch return;
         // Fill shader
-        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, fringe, fringe, -1.0, ctx);
+        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, ctx);
     }
 }
 
@@ -1233,14 +1142,15 @@ fn renderStroke(
     paint: *nvg.Paint,
     composite_operation: nvg.CompositeOperationState,
     scissor: *internal.Scissor,
-    fringe: f32,
-    strokeWidth: f32,
+    bounds: [4]f32,
+    clip_paths: []const internal.Path,
     paths: []const internal.Path,
 ) void {
     const ctx = WebGPUContext.castPtr(uptr);
 
     // TODO: blending?
     _ = composite_operation;
+    _ = clip_paths;
 
     const call = ctx.calls.addOne(ctx.allocator) catch return;
     call.* = Call{
@@ -1254,11 +1164,21 @@ fn renderStroke(
         .uniform_offset = @intCast(ctx.uniforms.items.len),
         // TODO: blending?
     };
-    ctx.paths.ensureUnusedCapacity(ctx.allocator, paths.len) catch return;
 
     // Allocate vertices for all the paths.
     const maxverts = maxVertCount(paths);
     ctx.verts.ensureUnusedCapacity(ctx.allocator, maxverts) catch return;
+
+    if (call.triangle_count > 0) {
+        call.triangle_offset = @intCast(ctx.verts.items.len);
+        ctx.verts.appendAssumeCapacity(.{ .x = bounds[2], .y = bounds[3], .u = 0.5, .v = 1 });
+        ctx.verts.appendAssumeCapacity(.{ .x = bounds[2], .y = bounds[1], .u = 0.5, .v = 1 });
+        ctx.verts.appendAssumeCapacity(.{ .x = bounds[0], .y = bounds[3], .u = 0.5, .v = 1 });
+        ctx.verts.appendAssumeCapacity(.{ .x = bounds[0], .y = bounds[1], .u = 0.5, .v = 1 });
+    }
+
+    ctx.paths.ensureUnusedCapacity(ctx.allocator, paths.len) catch return;
+    // call.blend_func = Blend.fromOperation(composite_operation);
 
     for (paths) |path| {
         const copy = ctx.paths.addOneAssumeCapacity();
@@ -1270,16 +1190,9 @@ fn renderStroke(
         }
     }
 
-    if (ctx.options.stencil_strokes) {
-        // Fill shader
-        ctx.uniforms.ensureUnusedCapacity(ctx.allocator, 2) catch return;
-        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, fringe, fringe, -1, ctx);
-        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, strokeWidth, fringe, 1.0 - 0.5 / 255.0, ctx);
-    } else {
-        // Fill shader
-        _ = ctx.uniforms.ensureUnusedCapacity(ctx.allocator, 1) catch return;
-        _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, strokeWidth, fringe, -1, ctx);
-    }
+    // Fill shader
+    _ = ctx.uniforms.ensureUnusedCapacity(ctx.allocator, 1) catch return;
+    _ = ctx.uniforms.addOneAssumeCapacity().fromPaint(paint, scissor, ctx);
 }
 
 fn renderTriangles(
@@ -1287,7 +1200,6 @@ fn renderTriangles(
     paint: *nvg.Paint,
     comp_op: nvg.CompositeOperationState,
     scissor: *internal.Scissor,
-    fringe: f32,
     verts: []const internal.Vertex,
 ) void {
     const ctx = WebGPUContext.castPtr(uptr);
@@ -1310,7 +1222,7 @@ fn renderTriangles(
 
     ctx.verts.appendSlice(ctx.allocator, verts) catch return;
     const frag = ctx.uniforms.addOne(ctx.allocator) catch return;
-    _ = frag.fromPaint(paint, scissor, 1, fringe, -1, ctx);
+    _ = frag.fromPaint(paint, scissor, ctx);
     frag.shader_type = @floatFromInt(@intFromEnum(ShaderType.image));
 }
 

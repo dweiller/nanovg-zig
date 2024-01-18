@@ -8,8 +8,6 @@ struct Uniforms {
     extent: vec2<f32>,
     radius: f32,
     feather: f32,
-    strokeMult: f32,
-    strokeThr: f32,
     texType: f32,
     call_type: f32,
 }
@@ -35,12 +33,6 @@ struct VertexOutput {
 fn vert(@location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>) -> VertexOutput {
     let clip_pos = vec4<f32>(2.0 * pos.x / view.x - 1.0, 1.0 - 2.0 * pos.y / view.y, 0.0, 1.0);
     return VertexOutput(clip_pos, pos, uv);
-}
-
-@fragment
-fn fragEdgeAA(input: VertexOutput) -> @location(0) vec4<f32> {
-    let strokeAlpha = strokeMask(input.uv);
-    return frag_main(input, strokeAlpha);
 }
 
 @fragment
@@ -109,8 +101,4 @@ fn sdroundrect(pt: vec2<f32>, ext: vec2<f32>, rad: f32) -> f32 {
     let ext2 = ext - vec2<f32>(rad, rad);
     let d = abs(pt) - ext2;
     return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0))) - rad;
-}
-
-fn strokeMask(uv: vec2<f32>) -> f32 {
-    return min(1.0, (1.0 - abs(uv.x * 2.0 - 1.0)) * uniforms.strokeMult) * min(1.0, uv.y);
 }
