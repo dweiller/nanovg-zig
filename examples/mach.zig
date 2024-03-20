@@ -3,8 +3,8 @@ const mach = @import("mach");
 const gpu = mach.core.gpu;
 
 const nvg = @import("nanovg");
-const Demo = @import("demo");
-const PerfGraph = @import("perf");
+const Demo = @import("demo.zig");
+const PerfGraph = @import("perf.zig");
 
 pub const App = @This();
 
@@ -38,7 +38,7 @@ pub fn init(app: *App) !void {
         device,
         &mach.core.swap_chain,
         swap_chain_format,
-        .{ .antialias = true },
+        .{},
     );
     app.demo.load(app.vg);
     app.fps = PerfGraph.init(.fps, "Frame Time");
