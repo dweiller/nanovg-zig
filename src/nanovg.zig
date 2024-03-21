@@ -29,6 +29,18 @@ pub const Paint = struct {
     colormap: Image,
 };
 
+pub const Path = struct {
+    const Verb = enum {
+        move,
+        line,
+        quad,
+        bezier,
+        close,
+    };
+    verbs: []const Verb,
+    points: []const f32,
+};
+
 pub const Winding = enum(u2) {
     none = 0,
     ccw = 1, // Winding for solid shapes
@@ -297,8 +309,8 @@ pub fn hsl(hue: f32, sat: f32, lig: f32) Color {
 pub fn hsla(hue: f32, sat: f32, lig: f32, a: u8) Color {
     var h = @mod(hue, 1.0);
     if (h < 0.0) h += 1.0;
-    var s = std.math.clamp(sat, 0, 1);
-    var l = std.math.clamp(lig, 0, 1);
+    const s = std.math.clamp(sat, 0, 1);
+    const l = std.math.clamp(lig, 0, 1);
     const m2 = if (l <= 0.5) l * (1 + s) else l + s - l * s;
     const m1 = 2 * l - m2;
     return .{
@@ -353,11 +365,6 @@ pub fn reset(self: Self) void {
 // using nvgLinearGradient(), nvgBoxGradient(), nvgRadialGradient() and nvgImagePattern().
 //
 // Current render style can be saved and restored using nvgSave() and nvgRestore().
-
-// Sets whether to draw antialias for nvgStroke() and nvgFill(). It's enabled by default.
-pub fn shapeAntiAlias(self: Self, enabled: bool) void {
-    self.ctx.shapeAntiAlias(enabled);
-}
 
 // // Sets current stroke style to a solid color.
 pub fn strokeColor(self: Self, color: Color) void {
@@ -563,9 +570,9 @@ pub fn transformPremultiply(dst: *[6]f32, src: *const [6]f32) void {
     const t = dst;
     const s = src;
     var tmp: [6]f32 = undefined;
-    std.mem.copy(f32, &tmp, s);
+    @memcpy(&tmp, s);
     transformMultiply(&tmp, t);
-    std.mem.copy(f32, t, &tmp);
+    @memcpy(t, &tmp);
 }
 
 // Sets the destination to inverse of specified transform.
@@ -624,7 +631,7 @@ pub fn createImageMem(self: Self, data: []const u8, flags: ImageFlags) Image {
 
 // Creates image from specified image data.
 // Returns handle to the image.
-pub fn createImageRGBA(self: Self, w: u32, h: u32, flags: ImageFlags, data: []const u8) Image {
+pub fn createImageRGBA(self: Self, w: u32, h: u32, flags: ImageFlags, data: ?[]const u8) Image {
     return self.ctx.createImageRGBA(w, h, flags, data);
 }
 
@@ -640,7 +647,7 @@ pub fn updateImage(self: Self, image: Image, data: []const u8) void {
 }
 
 // Returns the dimensions of a created image.
-pub fn imageSize(self: Self, image: Image, w: *i32, h: *i32) void {
+pub fn imageSize(self: Self, image: Image, w: *u32, h: *u32) void {
     self.ctx.imageSize(image.handle, w, h);
 }
 
@@ -742,6 +749,11 @@ pub fn beginPath(self: Self) void {
     self.ctx.beginPath();
 }
 
+// Adds a path consisting of multiple verbs and corresponding point data.
+pub fn addPath(self: Self, path: Path) void {
+    self.ctx.addPath(path);
+}
+
 // Starts new sub-path with specified point as first point.
 pub fn moveTo(self: Self, x: f32, y: f32) void {
     self.ctx.moveTo(x, y);
@@ -806,7 +818,12 @@ pub fn ellipse(self: Self, cx: f32, cy: f32, rx: f32, ry: f32) void {
 
 // Creates new circle shaped sub-path.
 pub fn circle(self: Self, cx: f32, cy: f32, r: f32) void {
-    self.ctx.circle(cx, cy, r);
+    self.ctx.ellipse(cx, cy, r, r);
+}
+
+// Use all previously recorded paths since beginPath as clip path.
+pub fn clip(self: Self) void {
+    self.ctx.clip();
 }
 
 // Fills the current path with current fill style.

@@ -4,84 +4,67 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const nanovg = b.addModule("nanovg", .{ .source_file = .{ .path = "src/nanovg.zig" } });
-
-    const lib = b.addStaticLibrary(.{
-        .name = "nanovg",
+    const nanovg_mod = b.addModule("nanovg", .{
         .root_source_file = .{ .path = "src/nanovg.zig" },
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
-    lib.addModule("nanovg", nanovg);
-    lib.addIncludePath(.{ .path = "src" });
-    lib.addCSourceFile(.{ .file = .{ .path = "src/fontstash.c" }, .flags = &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" } });
-    lib.addCSourceFile(.{ .file = .{ .path = "src/stb_image.c" }, .flags = &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" } });
-    lib.linkLibC();
-    lib.installHeader("src/fontstash.h", "fontstash.h");
-    lib.installHeader("src/stb_image.h", "stb_image.h");
-    lib.installHeader("src/stb_truetype.h", "stb_truetype.h");
-    b.installArtifact(lib);
+    nanovg_mod.addIncludePath(.{ .path = "src" });
+    nanovg_mod.addIncludePath(.{ .path = "lib/gl2/include" });
+    nanovg_mod.addCSourceFile(.{ .file = .{ .path = "src/fontstash.c" }, .flags = &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" } });
+    nanovg_mod.addCSourceFile(.{ .file = .{ .path = "src/stb_image.c" }, .flags = &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" } });
 
-    const target_wasm = if (target.cpu_arch) |arch| arch.isWasm() else false;
-    const demo = init: {
-        if (target_wasm) {
-            break :init b.addSharedLibrary(.{
-                .name = "demo",
-                .root_source_file = .{ .path = "examples/example_wasm.zig" },
-                .target = target,
-                .optimize = optimize,
-            });
-        } else {
-            break :init b.addExecutable(.{
-                .name = "demo",
-                .root_source_file = .{ .path = "examples/example_glfw.zig" },
-                .target = target,
-                .optimize = optimize,
-            });
-        }
-    };
-    demo.addModule("nanovg", nanovg);
-    demo.linkLibrary(lib);
+    if (target.result.isWasm()) {
+        _ = installDemo(b, target, optimize, "demo", "examples/example_wasm.zig", nanovg_mod);
+    } else {
+        const demo_glfw = installDemo(b, target, optimize, "demo_glfw", "examples/example_glfw.zig", nanovg_mod);
+        demo_glfw.addIncludePath(.{ .path = "examples" });
+        demo_glfw.addCSourceFile(.{ .file = .{ .path = "examples/stb_image_write.c" }, .flags = &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" } });
+        _ = installDemo(b, target, optimize, "demo_fbo", "examples/example_fbo.zig", nanovg_mod);
+        _ = installDemo(b, target, optimize, "demo_clip", "examples/example_clip.zig", nanovg_mod);
+    }
+}
 
-    if (target_wasm) {
+fn installDemo(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, name: []const u8, root_source_file: []const u8, nanovg_mod: *std.Build.Module) *std.Build.Step.Compile {
+    const demo = b.addExecutable(.{
+        .name = name,
+        .root_source_file = .{ .path = root_source_file },
+        .target = target,
+        .optimize = optimize,
+    });
+    demo.root_module.addImport("nanovg", nanovg_mod);
+
+    if (target.result.isWasm()) {
         demo.rdynamic = true;
+        demo.entry = .disabled;
     } else {
         demo.addIncludePath(.{ .path = "lib/gl2/include" });
         demo.addCSourceFile(.{ .file = .{ .path = "lib/gl2/src/glad.c" }, .flags = &.{} });
-        if (target.isWindows()) {
-            demo.addVcpkgPaths(.dynamic) catch @panic("vcpkg not installed");
-            if (demo.vcpkg_bin_path) |bin_path| {
-                for (&[_][]const u8{"glfw3.dll"}) |dll| {
-                    const src_dll = try std.fs.path.join(b.allocator, &.{ bin_path, dll });
-                    b.installBinFile(src_dll, dll);
-                }
-            }
-            demo.linkSystemLibrary("glfw3dll");
-            demo.linkSystemLibrary("opengl32");
-        } else if (target.isDarwin()) {
-            demo.linkSystemLibrary("glfw3");
-            demo.linkFramework("OpenGL");
-        } else if (target.isLinux()) {
-            demo.linkSystemLibrary("glfw3");
-            demo.linkSystemLibrary("GL");
-            demo.linkSystemLibrary("X11");
-        } else {
-            std.log.warn("Unsupported target: {}", .{target});
-            demo.linkSystemLibrary("glfw3");
-            demo.linkSystemLibrary("GL");
+        switch (target.result.os.tag) {
+            .windows => {
+                b.installBinFile("glfw3.dll", "glfw3.dll");
+                demo.linkSystemLibrary("glfw3dll");
+                demo.linkSystemLibrary("opengl32");
+            },
+            .macos => {
+                demo.addIncludePath(.{ .path = "/opt/homebrew/include" });
+                demo.addLibraryPath(.{ .path = "/opt/homebrew/lib" });
+                demo.linkSystemLibrary("glfw");
+                demo.linkFramework("OpenGL");
+            },
+            .linux => {
+                demo.linkSystemLibrary("glfw3");
+                demo.linkSystemLibrary("GL");
+                demo.linkSystemLibrary("X11");
+            },
+            else => {
+                std.log.warn("Unsupported target: {}", .{target});
+                demo.linkSystemLibrary("glfw3");
+                demo.linkSystemLibrary("GL");
+            },
         }
     }
-    lib.addIncludePath(.{ .path = "src" });
-    demo.addIncludePath(.{ .path = "examples" });
-    demo.addCSourceFile(.{ .file = .{ .path = "examples/stb_image_write.c" }, .flags = &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" } });
     b.installArtifact(demo);
-
-    const run_cmd = b.addRunArtifact(demo);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
-    const run_step = b.step("run", "Run the demo");
-    run_step.dependOn(&run_cmd.step);
+    return demo;
 }

@@ -105,7 +105,7 @@ pub fn draw(demo: Demo, vg: nvg, mx: f32, my: f32, width: f32, height: f32, t: f
 
     // Widgets
     drawWindow(vg, "Widgets `n Stuff", 50, 50, 300, 400);
-    var x: f32 = 60;
+    const x: f32 = 60;
     var y: f32 = 95;
     drawSearchBox(vg, "Search", x, y, 280, 25);
     y += 40;
@@ -477,12 +477,12 @@ fn drawEyes(vg: nvg, x: f32, y: f32, w: f32, h: f32, mx: f32, my: f32, t: f32) v
 }
 
 fn drawParagraph(vg: nvg, x_arg: f32, y_arg: f32, width: f32, height: f32, mx: f32, my: f32) void {
-    var x = x_arg;
+    const x = x_arg;
     var y = y_arg;
     _ = height;
     var rows: [3]nvg.TextRow = undefined;
     var glyphs: [100]nvg.GlyphPosition = undefined;
-    var text = "This is longer chunk of text.\n  \n  Would have used lorem ipsum but she    was busy jumping over the lazy dog with the fox and all the men who came to the aid of the party.🎉";
+    const text = "This is longer chunk of text.\n  \n  Would have used lorem ipsum but she    was busy jumping over the lazy dog with the fox and all the men who came to the aid of the party.🎉";
     var start: []const u8 = undefined;
     var lnum: i32 = 0;
     var px: f32 = undefined;
@@ -732,8 +732,8 @@ fn drawThumbnails(vg: nvg, x: f32, y: f32, w: f32, h: f32, images: []const nvg.I
         var ty = y + 10;
         tx += @as(f32, @floatFromInt(i % 2)) * (thumb + 10.0);
         ty += @as(f32, @floatFromInt(i / 2)) * (thumb + 10.0);
-        var imgw: i32 = undefined;
-        var imgh: i32 = undefined;
+        var imgw: u32 = undefined;
+        var imgh: u32 = undefined;
         vg.imageSize(image, &imgw, &imgh);
         var ix: f32 = undefined;
         var iy: f32 = undefined;
@@ -1051,6 +1051,26 @@ fn unpremultiplyAlpha(image: []u8, w: usize, h: usize, stride: usize) void {
                 row[0] = @truncate(@min(r * 255 / a, 255));
                 row[1] = @truncate(@min(g * 255 / a, 255));
                 row[2] = @truncate(@min(b * 255 / a, 255));
+            }
+        }
+    }
+}
+
+fn premultiplyAlpha(image: []u8, w: usize, h: usize, stride: usize) void {
+    var y: usize = 0;
+    while (y < h) : (y += 1) {
+        var row = image[y * stride ..][0 .. w * 4];
+        var x: usize = 0;
+        while (x < w) : (x += 1) {
+            defer row = row[4..];
+            const r = @as(u32, row[0]);
+            const g = @as(u32, row[1]);
+            const b = @as(u32, row[2]);
+            const a = @as(u32, row[3]);
+            if (a != 0) {
+                row[0] = @truncate(@min(r * a / 255, 255));
+                row[1] = @truncate(@min(g * a / 255, 255));
+                row[2] = @truncate(@min(b * a / 255, 255));
             }
         }
     }
