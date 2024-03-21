@@ -13,18 +13,18 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const nanovg = b.createModule(.{
-        .source_file = .{ .path = "../src/nanovg.zig" },
+        .root_source_file = .{ .path = "../src/nanovg.zig" },
     });
-    const nanovg_mod_dep = std.Build.ModuleDependency{ .name = "nanovg", .module = nanovg };
+    const nanovg_mod_dep = std.Build.Module.Import{ .name = "nanovg", .module = nanovg };
 
     const demo = b.createModule(.{
-        .source_file = .{ .path = "../examples/demo.zig" },
-        .dependencies = &.{nanovg_mod_dep},
+        .root_source_file = .{ .path = "../examples/demo.zig" },
+        .imports = &.{nanovg_mod_dep},
     });
 
     const perf = b.createModule(.{
-        .source_file = .{ .path = "../examples/perf.zig" },
-        .dependencies = &.{nanovg_mod_dep},
+        .root_source_file = .{ .path = "../examples/perf.zig" },
+        .imports = &.{nanovg_mod_dep},
     });
 
     const nanovg_demo = try mach.App.init(b, .{
@@ -39,8 +39,8 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    const gpu_module = nanovg_demo.core.compile.modules.get("mach-core").?.dependencies.get("mach-gpu").?;
-    try nanovg.dependencies.put("gpu", gpu_module);
+    const gpu_module = nanovg_demo.core.compile.root_module.import_table.get("mach-core").?.import_table.get("mach-gpu").?;
+    nanovg.addImport("gpu", gpu_module);
 
     try nanovg_demo.link();
     nanovg_demo.compile.addIncludePath(.{ .path = "../src" });

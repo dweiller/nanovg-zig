@@ -3,13 +3,9 @@
     .version = "0.2.0",
     .paths = .{ "build.zig.zon", "build.zig", "full_screen.wgsl", "main.zig" },
     .dependencies = .{
-        .mach_freetype = .{
-            .url = "https://pkg.machengine.org/mach-freetype/a6d971285dfe731e49f82e81c81da2b7f5c6a442.tar.gz",
-            .hash = "1220e0de43cacb583b8f9efddcbe359398cfca17a39e265b56c8f2a10314eb8f7a5f",
-        },
         .mach = .{
-            .url = "https://pkg.machengine.org/mach/d48690fdca7e7d185536ca60a4000b5b06604048.tar.gz",
-            .hash = "1220a5f8b65fb7e0f897061e3fe51234bc615eaa719d607d2921f037c58a0ea7a5b1",
+            .url = "https://pkg.machengine.org/mach/7904b741456146929f852a835b909f4fd33f17ff.tar.gz",
+            .hash = "1220082e849c856f05d13ce935ff2957be9ab27a8316226cd6c9585a0a1dfbbe515f",
         },
     },
 }
