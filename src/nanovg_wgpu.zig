@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const nvg = @import("nanovg.zig");
 const internal = @import("internal.zig");
 

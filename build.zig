@@ -25,11 +25,32 @@ pub fn build(b: *std.Build) !void {
         _ = installDemo(b, target, optimize, "demo_fbo", "examples/example_fbo.zig", nanovg_mod);
         _ = installDemo(b, target, optimize, "demo_clip", "examples/example_clip.zig", nanovg_mod);
 
-        const mach_demo = try addMachDemo(b, target, optimize, "demo_mach", "examples/mach.zig", nanovg_mod);
-        mach_demo.run.step.dependOn(&mach_demo.install.step);
+        if (b.lazyDependency("mach", .{ .optimize = optimize, .target = target })) |mach_dep| {
+            const nanovg_mach = b.createModule(.{
+                .root_source_file = b.path("src/nanovg.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+                .imports = &.{.{ .name = "mach", .module = mach_dep.module("mach") }},
+            });
+            nanovg_mach.addIncludePath(b.path("src"));
+            nanovg_mach.addCSourceFile(.{ .file = b.path("src/fontstash.c"), .flags = &.{ "-DFONS_NO_STDIO", "-fno-stack-protector" } });
+            nanovg_mach.addCSourceFile(.{ .file = b.path("src/stb_image.c"), .flags = &.{ "-DSTBI_NO_STDIO", "-fno-stack-protector" } });
 
-        const nanostep = b.step("run-mach", "Run Mach demo");
-        nanostep.dependOn(&mach_demo.run.step);
+            const mach_demo = try addMachDemo(
+                b,
+                target,
+                optimize,
+                "demo_mach",
+                "examples/mach.zig",
+                nanovg_mach,
+                mach_dep,
+            );
+            mach_demo.run.step.dependOn(&mach_demo.install.step);
+
+            const nanostep = b.step("run-mach", "Run Mach demo");
+            nanostep.dependOn(&mach_demo.run.step);
+        }
     }
 }
 
@@ -76,21 +97,27 @@ fn installDemo(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     return demo;
 }
 
-fn addMachDemo(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, name: []const u8, root_source_file: []const u8, nanovg_mod: *std.Build.Module) !mach.App {
-    const demo = try mach.App.init(b, .{
+fn addMachDemo(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    name: []const u8,
+    root_source_file: []const u8,
+    nanovg_mod: *std.Build.Module,
+    mach_dep: *std.Build.Dependency,
+) !mach.CoreApp {
+    const mach_builder = mach_dep.builder;
+    const demo = try mach.CoreApp.init(b, mach_builder, .{
         .name = name,
         .src = root_source_file,
         .target = target,
         .optimize = optimize,
         .deps = &.{
             .{ .name = "nanovg", .module = nanovg_mod },
-        }
+        },
+        .mach_mod = mach_dep.module("mach"),
     });
 
-    const gpu_module = demo.core.compile.root_module.import_table.get("mach").?.import_table.get("mach-gpu").?;
-    nanovg_mod.addImport("gpu", gpu_module);
-
-    try demo.link();
     demo.compile.linkLibC();
 
     return demo;

@@ -1,6 +1,6 @@
 const std = @import("std");
 const mach = @import("mach");
-const gpu = mach.core.gpu;
+const gpu = mach.gpu;
 
 const nvg = @import("nanovg");
 const Demo = @import("demo.zig");
