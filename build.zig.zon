@@ -14,8 +14,9 @@
     },
     .dependencies = .{
         .mach = .{
-            .url = "https://pkg.machengine.org/mach/279290bbf2f1adab0af00323280a07d6bfff47a5.tar.gz",
-            .hash = "1220ba5472217ef81455b19d540967049bbfaf768b30d04534865707e907ee1c4aec",
+            .url = "https://github.com/hexops/mach/archive/2f0415a60325868a72eab08e93746c804b9e66b9.tar.gz",
+            .hash = "12206c34197e552379b7b83b9b71e16230d3c87b5bff689f80d686b41b3486e9f486",
+            .lazy = true,
         },
     },
 }
